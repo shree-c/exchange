@@ -9,7 +9,6 @@ class OrderPending(BaseModel):
 
 
 class UpdateOrder(BaseModel):
-    order_id: UUID4
     updated_quantity: PositiveInt
     updated_price: PositiveFloat
 
@@ -40,10 +39,14 @@ class OrderPunched(BaseModel):
     price: float
     punched: float
     side: Literal[1, -1]
+    cancelled: Literal[1, 0]
 
 
-class OrderResponse(SuccessResponse):
+class MultiOrderResponse(SuccessResponse):
     data: List[OrderPunched]
 
-class OrderSuccess(SuccessResponse):
-    data: OrderResponse
+# class MultiOrderSuccess(SuccessResponse):
+#     data: MultiOrderResponse
+
+class SingleOrderResponse(SuccessResponse):
+    data: OrderPunched

@@ -150,31 +150,34 @@ class OrderCRUD:
             print(e)
             return [False, f"INTERNAL-x"]
 
-    def delete(self, order):
+    def delete(self, order_id):
         try:
-            order_string = self.r.hget(str(order.order_id))
-            if not order_string:
+            [status, order] = self.get(order_id)
+            print(order)
+            if not status:
                 return [False, "Order not found"]
-            [timestamp, side, quantity, price, punched, cancelled] = order_string.split(
-                "|"
-            )
-            if cancelled == "1":
+            if order["cancelled"] == 1:
                 return [False, "Order already cancelled"]
-            if punched != "0":
+            if order["punched"] != 0:
                 return [False, "Order is pending, you can't modify it"]
             res = self.r.zrem(
-                OrderCRUD.redis_order_matching_queue_key(int(side)), str(order.order_id)
+                OrderCRUD.redis_order_matching_queue_key(int(order["side"])),
+                str(order_id),
             )
+            print("popped from matching queue")
             if res == 0:
                 return [False, "Order is being processed"]
-            cancelled = "1"
+            order['cancelled'] = 1
             self.r.hset(
-                str(order.order_id),
-                f"{timestamp}|{side}|{quantity}|{price}|{punched}|{cancelled}",
+                OrderCRUD.redis_order_book_key(),
+                str(order_id),
+                OrderCRUD.make_order_book_value_string(order)
             )
-            self.r.rpush(OrderCRUD.redis_process_queue_key(), str(order.order_id))
-            return [True]
+            print("set")
+            self.r.rpush(OrderCRUD.redis_process_queue_key(), order_id)
+            return [True, None]
         except Exception as e:
+            print(e)
             return [False, f"INTERNAL-{str(e)}"]
 
     def update_punched(self, order_id, punched):
@@ -188,36 +191,43 @@ class OrderCRUD:
             )
             return [True, None]
         return [False, None]
+
     # TODO synchronization
     def update(self, order_id, updated_price, updated_quantity):
         try:
-            order_string = self.r.hget(
-                OrderCRUD.redis_order_book_key(), str(order_id)
-            )
+            print("start")
+            order_string = self.r.hget(OrderCRUD.redis_order_book_key(), str(order_id))
+            print("got order_string")
             if not order_string:
                 return [False, "Order not found"]
-            existing_order = OrderCRUD.split_order_value(order_string)
-            if existing_order['cancelled'] == "1":
+            print("splitting")
+            existing_order = OrderCRUD.split_order_value(order_string.decode())
+
+            print("fetched order", existing_order)
+            if existing_order["cancelled"] == 1:
                 return [False, "Order already cancelled"]
-            if existing_order['cancelled'] != "0":
+            if existing_order["punched"] != 0:
                 return [False, "Order is pending, you can't modify it"]
             res = self.r.zrem(
-                OrderCRUD.redis_order_matching_queue_key(int(existing_order['side'])), str(order_id)
+                OrderCRUD.redis_order_matching_queue_key(int(existing_order["side"])),
+                str(order_id),
             )
             if res == 0:
                 return [False, "Order is being processed"]
-            existing_order['price'] = updated_price
-            existing_order['quantity'] = updated_quantity
+            existing_order["price"] = updated_price
+            existing_order["quantity"] = updated_quantity
+            print("setting")
             self.r.hset(
                 OrderCRUD.redis_order_book_key(),
                 str(order_id),
-                OrderCRUD.make_order_book_value_string(
-                    existing_order
-                )
+                OrderCRUD.make_order_book_value_string(existing_order),
             )
+            print("set")
             self.r.rpush(OrderCRUD.redis_process_queue_key(), str(order_id))
+            print("queued")
             return [True, None]
         except Exception as e:
+            print(e)
             return [False, f"INTERNAL-{str(e)}"]
 
     def get(self, order_id):

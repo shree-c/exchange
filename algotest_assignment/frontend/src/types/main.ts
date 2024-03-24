@@ -13,4 +13,6 @@ export type Order = {
   punched: number
   quantity: number
   side: number
+  price: number
+  cancelled: 1 | 0
 }

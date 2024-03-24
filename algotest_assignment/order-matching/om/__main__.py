@@ -17,6 +17,7 @@ trade_crud = TradeCRUD(r)
 last_buy_id = ""
 last_sell_id = ""
 while True:
+    print('hie')
     TODAY_BUY_QUEUE = f"sorted_or_buys_{datetime.now().strftime('%Y_%m_%d')}"
     TODAY_SELLS_QUEUE = f"sorted_or_sells_{datetime.now().strftime('%Y_%m_%d')}"
     top_buy_id = r.zrange(TODAY_BUY_QUEUE, 0, 0)

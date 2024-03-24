@@ -9,9 +9,10 @@ from opi.models.api.main import (
     ErrorResponse,
     FailResponse,
     SuccessResponse,
-    OrderResponse,
+    MultiOrderResponse,
     OrderPunched,
-    OrderPending
+    OrderPending,
+    SingleOrderResponse,
 )
 from asyncio import sleep
 from csql import OrderCRUD, TradeCRUD
@@ -54,12 +55,9 @@ async def process_order(order: OrderPending):
 
 
 @app.put("/order", response_model=SuccessResponse)
-async def update_order(order: UpdateOrder):
-    # res = order_management.update(
-    # str(order.order_id), order.updated_quantity, order.updated_price
-    # )
+async def update_order(order: UpdateOrder, order_id: UUID4):
     [status, data] = order_crud.update(
-        order.order_id, order.updated_price, order.updated_quantity
+        str(order_id), order.updated_price, order.updated_quantity
     )
     if not status:
         return FailResponse(data={"message": data})
@@ -68,18 +66,21 @@ async def update_order(order: UpdateOrder):
 
 @app.delete("/order", response_model=SuccessResponse)
 async def delete_order(order_id: UUID4):
-    res = order_management.delete(str(order_id))
-    if type(res) == str:
-        return JSONResponse(
-            status_code=400, content=ErrorResponse(message=res).model_dump()
-        )
+    [res, data] = order_crud.delete(str(order_id))
+    if not res:
+        return FailResponse(data={"message": data})
     return SuccessResponse(data=None)
 
 
-@app.get("/order", response_model=OrderResponse)
+@app.get("/order", response_model=SingleOrderResponse)
 async def get_order(order_id: UUID4):
-    order = order_management.get(str(order_id))
-    return order
+    [status, data] = order_crud.get(str(order_id))
+    print("**********8")
+    print(data)
+    print("**********8")
+    if status:
+        return SingleOrderResponse(data=OrderPunched(**data, order_id=order_id))
+    return FailResponse(data={"reason": data})
 
 
 class LimitAndOffset(BaseModel):
@@ -87,12 +88,12 @@ class LimitAndOffset(BaseModel):
     offset: int = Field(ge=1)
 
 
-@app.get("/order/all", response_model=OrderResponse)
+@app.get("/order/all", response_model=MultiOrderResponse)
 async def get_all_orders(limit: int, offset: int):
     [status, data] = order_crud.get_all(limit, offset)
     print(data)
     if status:
-        return OrderResponse(data=list(map(lambda x: OrderPunched(**x), data)))
+        return MultiOrderResponse(data=list(map(lambda x: OrderPunched(**x), data)))
     return FailResponse(data={"reason": data})
 
 
