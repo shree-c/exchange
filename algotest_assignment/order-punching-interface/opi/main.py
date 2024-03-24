@@ -40,7 +40,7 @@ app.add_middleware(
 
 from redis import Redis
 
-r = Redis(password="shreex")
+r = Redis(host="redis")
 order_crud = OrderCRUD(r)
 trade_curd = TradeCRUD(r)
 

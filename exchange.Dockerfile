@@ -14,5 +14,4 @@ RUN pip install -e ./sql_crud
 
 RUN pip install -e .
 
-
 CMD ["python", "-m", "exwh"]

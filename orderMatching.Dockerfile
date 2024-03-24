@@ -4,7 +4,7 @@ RUN apt-get update && apt-get upgrade -y
 
 WORKDIR /app
 
-COPY /algotest_assignment/order-punching-interface /app
+COPY /algotest_assignment/order-matching /app
 
 ADD /algotest_assignment/sql_crud /app/sql_crud
 
@@ -14,6 +14,4 @@ RUN pip install -e ./sql_crud
 
 RUN pip install -e .
 
-EXPOSE 8000
-
-CMD ["uvicorn", "opi.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "om"]

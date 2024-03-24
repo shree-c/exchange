@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:latest
+    command: ["redis-server", "--save", "30", "1", "--loglevel", "warning"]
+    networks:
+      - algotest
+    volumes:
+      - redis_data:/data
+
+  api-exchange:
+    build:
+      dockerfile: orderPunching.Dockerfile
+    ports:
+      - 8000:8000
+
+    networks:
+      - algotest
+
+  order-matching:
+    build:
+      dockerfile: orderMatching.Dockerfile
+
+    networks:
+      - algotest
+
+  exchange-queue:
+    build:
+      dockerfile: exchange.Dockerfile
+
+    networks:
+      - algotest
+
+networks:
+  algotest:
+
+volumes:
+  redis_data:
+    driver: local

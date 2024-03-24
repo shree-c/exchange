@@ -3,7 +3,7 @@ from typing import Literal
 from redis import Redis
 from csql import OrderCRUD
 
-r = Redis(password='shreex')
+r = Redis(host="redis")
 
 order_crud = OrderCRUD(r)
 

@@ -5,7 +5,7 @@ from csql import OrderCRUD
 # from opi.controllers.matching_controller import pluck_order_id
 from redis import Redis
 
-r = Redis(password="shreex")
+r = Redis(host="redis")
 order_crud = OrderCRUD(r)
 
 

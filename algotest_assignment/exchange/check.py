@@ -6,7 +6,7 @@ from redis import Redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-r = Redis(password='shreex')
+r = Redis(host="redis")
 engine = create_engine("sqlite:///../orders.db")
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
