@@ -1,8 +1,7 @@
 <template>
   <div>
-    {{ wsData }}
     <div class="flex gap-2">
-      <DataTable class="flex-grow h-80" :value="transformForTable(wsData['buy'] || {})" >
+      <DataTable class="flex-grow h-80" :value="transformForTable(wsData['buy'] || {})">
         <Column field="quantity" header="Quantity" />
         <Column field="price" header="Price" />
       </DataTable>

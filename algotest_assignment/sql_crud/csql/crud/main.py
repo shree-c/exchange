@@ -218,7 +218,10 @@ class OrderCRUD:
         if existing_order["cancelled"] == 1:
             return [False, "Order already cancelled"]
         if existing_order["punched"] != 0:
-            return [False, "Order is pending, you can't modify it"]
+            if existing_order['punched'] != existing_order['quantity']:
+                return [False, "Order is pending, you can't modify it"]
+            else:
+                return [False, "Order is filled, you can't modify it"]
 
         # popping from order match list
         res = self.r.zrem(

@@ -24,7 +24,7 @@
             <InputText v-model="filters['global'].value" placeholder="Keyword Search" />
           </IconField>
           <FloatLabel>
-            <InputNumber v-model:model-value="limit" :min="0" />
+            <InputNumber v-model:model-value="limit" :min="0" :max="500" />
             <label>Number of records</label>
           </FloatLabel>
           <Button
@@ -130,7 +130,8 @@ import type { DataTableRowEditSaveEvent } from 'primevue/datatable'
 import Column from 'primevue/column'
 import InputNumber from 'primevue/inputnumber'
 import { client } from '@/network/client'
-import { useToast } from 'primevue/usetoast'
+import { useNetworkWrapper } from '@/composables/networkWrapper'
+const { networkWrapper, toast } = useNetworkWrapper()
 import { onMounted, ref } from 'vue'
 import type { Order } from '@/types/main'
 import IconField from 'primevue/iconfield'
@@ -138,7 +139,7 @@ import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
 import FloatLabel from 'primevue/floatlabel'
 const editingRows = ref()
-const toast = useToast()
+// const toast = useToast()
 const limit = useLocalStorage('limit', 10)
 const offset = useLocalStorage('offset', 0)
 const rdata = ref<Order[]>([])
@@ -154,7 +155,7 @@ onMounted(async () => {
 
 // events
 async function fetchOrders() {
-  try {
+  await networkWrapper(async () => {
     const { data } = await client.get('order/all', {
       params: {
         limit: limit.value,
@@ -163,15 +164,8 @@ async function fetchOrders() {
     })
     if (data.status === 'success') {
       rdata.value = data.data
-    } else {
-      throw data
     }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: JSON.stringify(error)
-    })
-  }
+  })
 }
 
 async function rowEditSave({ index, newData }: DataTableRowEditSaveEvent) {
@@ -180,7 +174,7 @@ async function rowEditSave({ index, newData }: DataTableRowEditSaveEvent) {
 }
 
 async function cancelOrder(order_id: string) {
-  try {
+  await networkWrapper(async () => {
     const { data } = await client.delete('order', {
       params: {
         order_id
@@ -193,19 +187,12 @@ async function cancelOrder(order_id: string) {
         life: 3000
       })
       await fetchOrders()
-    } else {
-      throw data
     }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: JSON.stringify(error)
-    })
-  }
+  })
 }
 
 async function updateOrder(updated_quantity: number, updated_price: number, order_id: number) {
-  try {
+  return networkWrapper(async () => {
     const { data } = await client.put(
       'order',
       {
@@ -225,19 +212,10 @@ async function updateOrder(updated_quantity: number, updated_price: number, orde
         life: 3000
       })
       return true
+    } else {
+      return false
     }
-    toast.add({
-      severity: 'error',
-      summary: JSON.stringify(data).slice(0, 150),
-      life: 3000
-    })
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: JSON.stringify(error),
-      life: 3000
-    })
-  }
+  })
 }
 </script>
 

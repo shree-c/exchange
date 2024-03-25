@@ -19,12 +19,7 @@
       <label>Quantity</label>
     </FloatLabel>
     <FloatLabel>
-      <InputNumber
-        v-model="price"
-        :min="1"
-        :max-fraction-digits="2"
-        input-class="w-28"
-      />
+      <InputNumber v-model="price" :min="1" :max-fraction-digits="2" input-class="w-28" />
       <label>Price</label>
     </FloatLabel>
     <Button label="Punch" @click="punchTrade" />
@@ -36,18 +31,17 @@ import Dropdown from 'primevue/dropdown'
 import Button from 'primevue/button'
 import FloatLabel from 'primevue/floatlabel'
 import InputNumber from 'primevue/inputnumber'
-import { ref } from 'vue'
 import { client } from '@/network/client'
-import { useToast } from 'primevue/usetoast'
-import {useLocalStorage} from '@vueuse/core'
-const toast = useToast()
+import { useLocalStorage } from '@vueuse/core'
+import { useNetworkWrapper } from '@/composables/networkWrapper'
+const { networkWrapper, toast } = useNetworkWrapper()
 
-const side = useLocalStorage<-1 | 1>('side',1)
+const side = useLocalStorage<-1 | 1>('side', 1)
 const quantity = useLocalStorage<number>('quantity', 1)
 const price = useLocalStorage<number>('price', 1)
 // events
 async function punchTrade() {
-  try {
+  await networkWrapper(async () => {
     const { data } = await client.post('order', {
       price: price.value,
       quantity: quantity.value,
@@ -56,15 +50,10 @@ async function punchTrade() {
     if (data.status === 'success') {
       toast.add({
         severity: 'success',
-        summary: 'Order sent.'
+        summary: `Order created. ${data.data.order_id}`
       })
     }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: JSON.stringify(error)
-    })
-  }
+  })
 }
 </script>
 

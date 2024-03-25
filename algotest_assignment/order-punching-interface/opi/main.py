@@ -21,7 +21,7 @@ app = FastAPI(
     responses={
         "404": {"model": FailResponse},
         "500": {"model": ErrorResponse},
-        "401": {"model": FailResponse},
+        "400": {"model": FailResponse},
     }
 )
 
@@ -50,7 +50,7 @@ async def process_order(order: OrderPending):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=404, content=FailResponse(data=data).model_dump())
+    return JSONResponse(status_code=404, content=FailResponse(data={'message': data}).model_dump())
 
 
 @app.put("/order", response_model=SuccessResponse)
@@ -64,7 +64,7 @@ async def update_order(order: UpdateOrder, order_id: UUID4):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=401, content=FailResponse(data=data).model_dump())
+    return JSONResponse(status_code=400, content=FailResponse(data={'message': data}).model_dump())
 
 
 @app.delete("/order", response_model=SuccessResponse)
@@ -76,7 +76,7 @@ async def delete_order(order_id: UUID4):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=401, content=FailResponse(data=data).model_dump())
+    return JSONResponse(status_code=400, content=FailResponse(data={'message': data}).model_dump())
 
 
 @app.get("/order", response_model=SingleOrderResponse)
@@ -88,7 +88,7 @@ async def get_order(order_id: UUID4):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=404, content=FailResponse(data=data).model_dump())
+    return JSONResponse(status_code=404, content=FailResponse(data={'message': data}).model_dump())
 
 
 class LimitAndOffset(BaseModel):
@@ -105,7 +105,7 @@ async def get_all_orders(pagination: LimitAndOffset = Depends()):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=404, content=FailResponse(data=data).model_dump())
+    return JSONResponse(status_code=404, content=FailResponse(data={'message': data}).model_dump())
 
 
 @app.websocket("/depth")

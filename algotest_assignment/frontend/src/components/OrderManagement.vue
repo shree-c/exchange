@@ -1,5 +1,4 @@
 <template>
-  {{ rData }}
   <div class="flex gap-2">
     <FloatLabel>
       <InputText v-model="orderId" />
@@ -107,11 +106,11 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import FloatLabel from 'primevue/floatlabel'
 import InputNumber from 'primevue/inputnumber'
-import { AxiosError } from 'axios'
-import { useToast } from 'primevue/usetoast'
+import { useNetworkWrapper } from '@/composables/networkWrapper'
+const { networkWrapper, toast } = useNetworkWrapper()
 import { ref } from 'vue'
 import type { Order } from '@/types/main'
-const toast = useToast()
+const orderId = ref('')
 const rData = ref<Order | null>(null)
 const editMode = ref(false)
 const editData = ref<{
@@ -123,7 +122,7 @@ const editData = ref<{
 })
 
 async function fetchOrder() {
-  try {
+  await networkWrapper(async () => {
     const { data } = await client.get('order', {
       params: {
         order_id: orderId.value
@@ -131,18 +130,17 @@ async function fetchOrder() {
     })
     if (data.status === 'success') {
       rData.value = data.data
+    } else {
+      toast.add({
+        summary: `data.false ${data.status} with 200 status code this should not have happened.`,
+        severity: 'error'
+      })
     }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: JSON.stringify(error),
-      life: 3000
-    })
-  }
+  })
 }
 
 async function updateOrder() {
-  try {
+  await networkWrapper(async () => {
     const { data } = await client.put(
       'order',
       {
@@ -157,47 +155,14 @@ async function updateOrder() {
     )
     if (data.status === 'success') {
       rData.value = data.data
-      toast.add({
-        severity: 'success',
-        summary: 'Received orders',
-        life: 3000
-      })
     } else {
       toast.add({
-        severity: 'error',
-        summary: JSON.stringify(data).slice(0, 150),
-        life: 3000
+        summary: `data.false ${data.status} with 200 status code this should not have happened.`,
+        severity: 'error'
       })
     }
-  } catch (error) {
-    if (error instanceof AxiosError) {
-      
-      if (error.response?.status == 401) {
-        const message = error.response?.data?.message
-          ? error.response?.data?.message
-          : 'Client error: unknown cause'
-        toast.add({
-          severity: 'error',
-          summary: message,
-          life: 3000
-        })
-      } else if (error.response?.status === 500) {
-        toast.add({
-          severity: 'error',
-          summary: error.response?.data?.message || 'Server error: unknown cause',
-          life: 3000
-        })
-      }
-    }
-    toast.add({
-      severity: 'error',
-      summary: 'An unexpected error happened please check console',
-      life: 3000
-    })
-  }
+  })
 }
-
-const orderId = ref('')
 </script>
 
 <style scoped></style>
