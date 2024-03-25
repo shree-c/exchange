@@ -192,6 +192,7 @@ async function cancelOrder(order_id: string) {
         summary: `order ${order_id} deleted.`,
         life: 3000
       })
+      await fetchOrders()
     } else {
       throw data
     }

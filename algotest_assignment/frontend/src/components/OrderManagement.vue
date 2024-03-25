@@ -107,7 +107,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import FloatLabel from 'primevue/floatlabel'
 import InputNumber from 'primevue/inputnumber'
-import Toast from 'primevue/toast'
+import { AxiosError } from 'axios'
 import { useToast } from 'primevue/usetoast'
 import { ref } from 'vue'
 import type { Order } from '@/types/main'
@@ -170,9 +170,28 @@ async function updateOrder() {
       })
     }
   } catch (error) {
+    if (error instanceof AxiosError) {
+      
+      if (error.response?.status == 401) {
+        const message = error.response?.data?.message
+          ? error.response?.data?.message
+          : 'Client error: unknown cause'
+        toast.add({
+          severity: 'error',
+          summary: message,
+          life: 3000
+        })
+      } else if (error.response?.status === 500) {
+        toast.add({
+          severity: 'error',
+          summary: error.response?.data?.message || 'Server error: unknown cause',
+          life: 3000
+        })
+      }
+    }
     toast.add({
       severity: 'error',
-      summary: JSON.stringify(error),
+      summary: 'An unexpected error happened please check console',
       life: 3000
     })
   }

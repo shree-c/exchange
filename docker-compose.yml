@@ -23,12 +23,6 @@ services:
     networks:
       - algotest
 
-  exchange-queue:
-    build:
-      dockerfile: exchange.Dockerfile
-    networks:
-      - algotest
-
 networks:
   algotest:
 

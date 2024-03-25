@@ -11,9 +11,11 @@ def dow(func):
 
     def wrapper(*args, **kwargs):
         try:
-            return func(*args, **kwargs)
+            x = func(*args, **kwargs)
+            return x
         except Exception as e:
-            return [True, f"INTERNAL-{str(e)}"]
+            print("okay error happened", e)
+            return [False, f"INTERNAL-{str(e)}"]
 
     return wrapper
 
@@ -105,16 +107,10 @@ class OrderCRUD:
     def redis_order_book_key():
         return f"order_book_{datetime.now().strftime('%Y-%m-%d')}"
 
-    def redis_process_queue_key():
-        return f"order_process_queue_{datetime.now().strftime('%Y-%m-%d')}"
-
     def redis_order_matching_queue_key(side):
         if side == 1:
             return f"sorted_or_buys_{datetime.now().strftime('%Y_%m_%d')}"
         return f"sorted_or_sells_{datetime.now().strftime('%Y_%m_%d')}"
-
-    def redis_process_queue_score_key():
-        return f"order_process_queue_score_{datetime.now().strftime('%Y_%m_%d')}"
 
     def redis_order_list_passive_key():
         return f"order_list_{datetime.now().strftime('%Y_%m_%d')}"
@@ -139,35 +135,43 @@ class OrderCRUD:
 
     @dow
     def create(self, order):
-        order_id = uuid.uuid4()
+        order_id = str(uuid.uuid4())
         timestamp = datetime.now().timestamp()
         order["timestamp"] = timestamp
         order["order_id"] = order_id
         order["punched"] = 0
         order["cancelled"] = 0
+        # into order book
         self.r.hset(
             OrderCRUD.redis_order_book_key(),
             str(order_id),
             OrderCRUD.make_order_book_value_string(order),
         )
         score = OrderCRUD.get_score(order["price"], order["timestamp"], order["side"])
-        self.r.zadd(
-            OrderCRUD.redis_order_matching_queue_key(order["side"]), {order_id: score}
+        # into
+        res = self.r.zadd(
+            OrderCRUD.redis_order_matching_queue_key(order["side"]),
+            {str(order_id): score},
         )
+        if res == 0:
+            return [False, "Couldn't add to order match queue"]
+        # for maintaining list of order ids by timestamp
+        # right to left: new to old
+        self.r.rpush(OrderCRUD.redis_order_list_passive_key(), str(order_id))
         return [True, order_id]
 
     @dow
     def pop_top_buy(self):
         res = self.r.zpopmin(OrderCRUD.redis_order_matching_queue_key(1))
         if len(res) == 0:
-            return [True, None]
+            return [False, "No buys available"]
         return [True, (res[0][0].decode(), res[0][1])]
 
     @dow
     def pop_top_sell(self):
         res = self.r.zpopmin(OrderCRUD.redis_order_matching_queue_key(-1))
         if len(res) == 0:
-            return [True, None]
+            return [False, "No sells available"]
         return [True, (res[0][0].decode(), res[0][1])]
 
     @dow
@@ -190,16 +194,16 @@ class OrderCRUD:
 
     @dow
     def update_punched(self, order_id, punched):
-        [status, order] = self.get(order_id)
+        [status, data] = self.get(order_id)
         if status:
-            order["punched"] = punched
+            data["punched"] = punched
             self.r.hset(
                 OrderCRUD.redis_order_book_key(),
                 order_id,
-                OrderCRUD.make_order_book_value_string(order),
+                OrderCRUD.make_order_book_value_string(data),
             )
             return [True, None]
-        return [False, None]
+        return [False, data]
 
     # To handle race conditions for delete(cancel) and update.
     # If the order is updatable:
@@ -226,13 +230,14 @@ class OrderCRUD:
             return [False, "Order is being processed"]
         existing_order["price"] = updated_price
         existing_order["quantity"] = updated_quantity
+        # updating order book
         self.r.hset(
             OrderCRUD.redis_order_book_key(),
             str(order_id),
             OrderCRUD.make_order_book_value_string(existing_order),
         )
-        # putting it back to order process queue
-        self.r.rpush(OrderCRUD.redis_process_queue_key(), str(order_id))
+        # pushing it back
+        self.push_to_om_queue(str(order_id))
         return [True, None]
 
     @dow
@@ -258,7 +263,7 @@ class OrderCRUD:
             str(order_id),
             OrderCRUD.make_order_book_value_string(order),
         )
-        self.r.rpush(OrderCRUD.redis_process_queue_key(), order_id)
+        # not pushing it back
         return [True, None]
 
     @dow
@@ -266,26 +271,17 @@ class OrderCRUD:
         order_value = self.r.hget(OrderCRUD.redis_order_book_key(), order_id)
         if order_value:
             return [True, OrderCRUD.split_order_value(order_value.decode())]
-        return [True, None]
+        return [False, "Order doesn't exist"]
 
     @dow
     def get_all(self, limit, offset):
+        # get all orders
         order_ids = self.r.lrange(
             OrderCRUD.redis_order_list_passive_key(), offset, offset + limit - 1
         )
         if len(order_ids) == 0:
             return [True, []]
         return self.get_these_orders(order_ids)
-
-    @dow
-    def get_all_queued_orders(self, max=1000):
-        orders = [
-            item.decode()
-            for item in reversed(
-                self.r.lrange(OrderCRUD.redis_process_queue_key(), 0, 10000)
-            )
-        ]
-        return [True, orders]
 
     @dow
     def get_these_orders(self, order_ids):
@@ -309,18 +305,14 @@ class OrderCRUD:
         ]
 
     @dow
-    def delete_from_order_process_queue(self, count):
-        self.r.lpop(OrderCRUD.redis_process_queue_key(), count)
-        return [True, None]
-
-    @dow
     def push_to_om_queue(self, order_id):
-        [status, order] = self.get(order_id)
+        [status, data] = self.get(order_id)
         if not status:
-            return [status, order]
-        score = OrderCRUD.get_score(order)
+            return [status, data]
+        score = OrderCRUD.get_score(data)
         res = self.r.zadd(
-            OrderCRUD.redis_order_matching_queue_key(), {order["order_id"]: score}
+            OrderCRUD.redis_order_matching_queue_key(data["side"]),
+            {data["order_id"]: score},
         )
         if res == 0:
             return [False, "Couldn't add order_id"]
@@ -331,20 +323,19 @@ class OrderCRUD:
         price_quantity = {}
         index = 0
         while True:
-            l = self.r.zcard(key)
-            if l == index:
-                break
-            if l == 0:
+            card = self.r.zcard(key)
+            # index is greater than cardinality
+            if card == index or card == 0:
                 break
             order_id = self.r.zrange(key, index, index)[0]
             [status, data] = self.get(order_id.decode())
             if not status:
                 continue
             if data:
-                price = data['price']
+                price = data["price"]
                 if len(price_quantity) == depth and str(price) not in price_quantity:
                     break
-                quantity = data['quantity'] - data['punched']
+                quantity = data["quantity"] - data["punched"]
                 if str(price) not in price_quantity:
                     price_quantity[str(price)] = quantity
                 else:
@@ -359,4 +350,3 @@ class OrderCRUD:
     @dow
     def calculate_depth_sell(self, depth):
         return self.calculate_depth(depth, OrderCRUD.redis_order_matching_queue_key(-1))
-
