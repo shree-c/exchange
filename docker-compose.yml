@@ -8,6 +8,8 @@ services:
       - algotest
     volumes:
       - redis_data:/data
+    env_file:
+      - .env
 
   api-exchange:
     build:
@@ -16,12 +18,31 @@ services:
       - 8000:8000
     networks:
       - algotest
+    depends_on:
+      - redis
+      - order-matching
+    env_file:
+      - .env
 
   order-matching:
     build:
       dockerfile: orderMatching.Dockerfile
     networks:
       - algotest
+    depends_on:
+      - redis
+    env_file:
+      - .env
+
+  frontend:
+    build:
+      dockerfile: frontend.Dockerfile
+    networks:
+      - algotest
+    depends_on:
+      - api-exchange
+    ports:
+      - 8080:80
 
 networks:
   algotest:

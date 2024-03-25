@@ -1,5 +1,7 @@
 from fastapi import FastAPI, WebSocket, Depends, WebSocketDisconnect, WebSocketException
 from fastapi.responses import JSONResponse
+from opi.models.env import env_settings
+import json
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, UUID4
 from opi.models.api.main import (
@@ -13,9 +15,9 @@ from opi.models.api.main import (
     SingleOrderResponse,
 )
 from asyncio import sleep
-from csql import OrderCRUD, TradeCRUD
+from crud import OrderCRUD, TradeCRUD
 from redis import Redis
-
+from redis.asyncio import Redis as ARedis
 
 app = FastAPI(
     responses={
@@ -35,8 +37,8 @@ app.add_middleware(
 
 from redis import Redis
 
-# r = Redis(host="redis")
-r = Redis(host="localhost", password="shreex")
+r = Redis(host=env_settings.redis_host, password=env_settings.redis_password)
+r_async = ARedis(host=env_settings.redis_host, password=env_settings.redis_password)
 order_crud = OrderCRUD(r)
 trade_curd = TradeCRUD(r)
 
@@ -50,7 +52,9 @@ async def process_order(order: OrderPending):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=404, content=FailResponse(data={'message': data}).model_dump())
+    return JSONResponse(
+        status_code=404, content=FailResponse(data={"message": data}).model_dump()
+    )
 
 
 @app.put("/order", response_model=SuccessResponse)
@@ -64,7 +68,9 @@ async def update_order(order: UpdateOrder, order_id: UUID4):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=400, content=FailResponse(data={'message': data}).model_dump())
+    return JSONResponse(
+        status_code=400, content=FailResponse(data={"message": data}).model_dump()
+    )
 
 
 @app.delete("/order", response_model=SuccessResponse)
@@ -76,7 +82,9 @@ async def delete_order(order_id: UUID4):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=400, content=FailResponse(data={'message': data}).model_dump())
+    return JSONResponse(
+        status_code=400, content=FailResponse(data={"message": data}).model_dump()
+    )
 
 
 @app.get("/order", response_model=SingleOrderResponse)
@@ -88,7 +96,9 @@ async def get_order(order_id: UUID4):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=404, content=FailResponse(data={'message': data}).model_dump())
+    return JSONResponse(
+        status_code=404, content=FailResponse(data={"message": data}).model_dump()
+    )
 
 
 class LimitAndOffset(BaseModel):
@@ -105,7 +115,9 @@ async def get_all_orders(pagination: LimitAndOffset = Depends()):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
-    return JSONResponse(status_code=404, content=FailResponse(data={'message': data}).model_dump())
+    return JSONResponse(
+        status_code=404, content=FailResponse(data={"message": data}).model_dump()
+    )
 
 
 @app.websocket("/depth")
@@ -119,29 +131,35 @@ async def get_all_trades(ws: WebSocket):
                     "sell": order_crud.calculate_depth_sell(5)[1],
                 }
             )
-            await sleep(1)
+            await sleep(env_settings.opi_bid_ask_spread_stream_interval)
     except WebSocketDisconnect as e:
         print("WS disconnect: get all trades, ", str(e))
     except WebSocketException as e:
         print("WS Exception: get all trades, ", str(e))
     except Exception as e:
         print("/depth exception ", str(e))
-        
+
 
 @app.websocket("/trade-update")
 async def get_all_trades(ws: WebSocket, max: int = 50):
-    
     try:
+        print("connection open")
+        pubsub = r_async.pubsub()
+        await pubsub.subscribe("trades")
         await ws.accept()
         while True:
-            [status, trades] = trade_curd.get_new_trades(max)
-            if status:
-                await ws.send_json(trades)
-            await sleep(1)
+            print("loop start")
+            data = await pubsub.get_message()
+            if data:
+                print("got data", data)
+            if data and data["type"] == "message":
+                await ws.send_json(json.loads(data["data"].decode()))
+                print("sent data")
+                continue
+            await sleep(env_settings.opi_trade_update_stream_interval)
     except WebSocketDisconnect as e:
         print("WS disconnect: trade update, ", str(e))
     except WebSocketException as e:
         print("WS Exception: trade update, ", str(e))
     except Exception as e:
         print("/trade update exception ", str(e))
- 

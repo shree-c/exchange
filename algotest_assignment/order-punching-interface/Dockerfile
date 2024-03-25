@@ -6,8 +6,8 @@ WORKDIR /app
 
 COPY . /app/
 
-ADD /home/shree/algotest_assignment/sql_crud /app/sql_crud
+ADD /home/shree/algotest_assignment/crud /app/crud
 
 RUN pip install -r requirement.txt
 
-RUN pip install -e ./sql_crud
+RUN pip install -e ./crud

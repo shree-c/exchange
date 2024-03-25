@@ -1,7 +1,10 @@
 <template>
   <div>
+    <div class="text-3xl ml-auto w-max font-mono">
+      {{ wsData.length > 0 ? wsData[wsData.length - 1].price : 0 }} : LTP
+    </div>
     <DataTable
-      :value="wsData"
+      :value="wsData.reverse()"
       size="small"
       state-storage="local"
       state-key="trade-table"
@@ -24,17 +27,18 @@
           />
         </div>
       </template>
-      <Column header="Timestamp" sortable field="timestamp">
+      <Column header="Timestamp" field="timestamp">
         <template #body="{ data }">
           <div>
             {{ new Date(data.timestamp * 1000).toLocaleString() }}
           </div>
         </template>
       </Column>
-      <Column header="Quantity" field="quantity" sortable />
+      <Column header="Quantity" field="quantity" />
       <Column header="Trade id" field="trade_id" />
       <Column header="Buy order id" field="buy_order_id" />
       <Column header="Sell order id" field="sell_order_id" />
+      <Column header="Price" field="price" />
     </DataTable>
   </div>
 </template>
@@ -60,8 +64,8 @@ onMounted(() => {
   connect()
   if (ws)
     ws.onmessage = (data) => {
-      wsData.value.push(...JSON.parse(data.data || []))
-      wsData.value = wsData.value.slice(-1 * rowsKept.value)
+      wsData.value.unshift(JSON.parse(data.data) || [])
+      wsData.value = wsData.value.slice(0, rowsKept.value)
     }
 })
 

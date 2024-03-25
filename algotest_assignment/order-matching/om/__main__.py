@@ -1,9 +1,10 @@
-from csql import OrderCRUD, TradeCRUD
+from crud import OrderCRUD, TradeCRUD
 from datetime import datetime
 from time import sleep
 from redis import Redis
+from om.env import env_settings
 
-r = Redis(host="localhost", password="shreex")
+r = Redis(host=env_settings.redis_host, password=env_settings.redis_password)
 order_crud = OrderCRUD(r)
 trade_crud = TradeCRUD(r)
 
@@ -63,8 +64,7 @@ while True:
             order_crud.update_punched(top_buy_id, punched + buy_order["punched"])
             order_crud.update_punched(top_sell_id, punched + sell_order["punched"])
             trade_crud.create_trade(trade_order)
-        
-        print(buy_remaining, sell_remaining)
+
         if buy_remaining != 0:
             [status, data] = order_crud.push_to_buy_match_queue(
                 top_buy_id, top_buy_data[1]
@@ -82,5 +82,5 @@ while True:
             order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
         if type(top_buy_data) == tuple:
             order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
-        print("couldn't match any")
-    sleep(0.5)
+    print("next loop...")
+    sleep(env_settings.order_matching_interval)

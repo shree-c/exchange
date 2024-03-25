@@ -1,6 +1,8 @@
 from datetime import datetime
 from redis import Redis
 from datetime import datetime
+from crud.env import env_settings
+import json
 import uuid
 
 
@@ -8,13 +10,11 @@ def dow(func):
     """
     Database operations wrapper
     """
-
     def wrapper(*args, **kwargs):
         try:
             x = func(*args, **kwargs)
             return x
         except Exception as e:
-            print("okay error happened", e)
             return [False, f"INTERNAL-{str(e)}"]
 
     return wrapper
@@ -26,13 +26,10 @@ class TradeCRUD:
         pass
 
     def redis_trade_book_key():
-        return f"trade_book_{datetime.now().strftime('%Y-%m-%d')}"
+        return f"{env_settings.crud_trade_book_prefix}{datetime.now().strftime('%Y-%m-%d')}"
 
     def redis_trade_id_list_key():
-        return f"trade_id_list{datetime.now().strftime('%Y-%m-%d')}"
-
-    def redis_trade_id_consumption_list():
-        return f"trade_id_consumption_list{datetime.now().strftime('%Y-%m-%d')}"
+        return f"{env_settings.crud_trade_id_list_prefix}{datetime.now().strftime('%Y-%m-%d')}"
 
     def make_trade_value_string(trade):
         return f"{trade['timestamp']}|{trade['buy_order_id']}|{trade['sell_order_id']}|{trade['price']}|{trade['quantity']}"
@@ -60,7 +57,9 @@ class TradeCRUD:
             TradeCRUD.make_trade_value_string(trade),
         )
         self.r.lpush(TradeCRUD.redis_trade_id_list_key(), trade_id)
-        self.r.lpush(TradeCRUD.redis_trade_id_consumption_list(), trade_id)
+        trade['trade_id'] = trade_id
+        self.r.publish('trades', json.dumps(trade))
+        print('published trade ...')
         return [True, None]
 
     @dow
@@ -105,15 +104,15 @@ class OrderCRUD:
         pass
 
     def redis_order_book_key():
-        return f"order_book_{datetime.now().strftime('%Y-%m-%d')}"
+        return f"{env_settings.crud_order_book_prefix}{datetime.now().strftime('%Y-%m-%d')}"
 
     def redis_order_matching_queue_key(side):
         if side == 1:
-            return f"sorted_or_buys_{datetime.now().strftime('%Y_%m_%d')}"
-        return f"sorted_or_sells_{datetime.now().strftime('%Y_%m_%d')}"
+            return f"{env_settings.crud_order_match_queue_prefix}_buys_{datetime.now().strftime('%Y_%m_%d')}"
+        return f"{env_settings.crud_order_match_queue_prefix}_sells_{datetime.now().strftime('%Y_%m_%d')}"
 
     def redis_order_list_passive_key():
-        return f"order_list_{datetime.now().strftime('%Y_%m_%d')}"
+        return f"{env_settings.crud_order_id_list_prefix}_{datetime.now().strftime('%Y_%m_%d')}"
 
     def split_order_value(order_string):
         [timestamp, side, quantity, price, punched, cancelled] = order_string.split("|")

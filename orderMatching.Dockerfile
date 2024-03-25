@@ -6,11 +6,11 @@ WORKDIR /app
 
 COPY /algotest_assignment/order-matching /app
 
-ADD /algotest_assignment/sql_crud /app/sql_crud
+ADD /algotest_assignment/crud /app/crud
 
 RUN pip install -r requirement.txt
 
-RUN pip install -e ./sql_crud
+RUN pip install -e ./crud
 
 RUN pip install -e .
 
