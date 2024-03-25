@@ -3,19 +3,11 @@ from datetime import datetime
 from time import sleep
 from redis import Redis
 
-# from sqlalchemy import create_engine
-# from sqlalchemy.orm import sessionmaker
+r = Redis(host='redis')
 
-r = Redis( host='redis')
-
-# engine = create_engine("sqlite:///orders.db")
-# Base.metadata.create_all(engine)
-# Session = sessionmaker(bind=engine)
-# session = Session()
 order_crud = OrderCRUD(r)
 
 SCALE_FACTOR = 1e5
-
 
 def get_score(price, timestamp, side):
     price_scaled = price * SCALE_FACTOR
@@ -24,11 +16,6 @@ def get_score(price, timestamp, side):
 
 def mark_accepted(order_ids):
     order_crud.mark_orders_accepted(order_ids)
-
-
-r.delete(f"sorted_or_buys_{datetime.now().strftime('%Y_%m_%d')}")
-r.delete(f"sorted_or_sells_{datetime.now().strftime('%Y_%m_%d')}")
-
 
 def insert_them_in_op_list(unaccepted_orders):
     sells = {}
@@ -51,7 +38,6 @@ def insert_them_in_op_list(unaccepted_orders):
     if len(sells) != 0:
         print("adding to sell queue", sells)
         r.zadd(f"sorted_or_sells_{datetime.now().strftime('%Y_%m_%d')}", sells)
-    # mark_accepted([*sells.keys(), *buys.keys()])
 
 
 while True:

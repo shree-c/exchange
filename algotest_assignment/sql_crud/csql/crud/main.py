@@ -1,32 +1,27 @@
-from csql.models.db import Order, Trade
 from datetime import datetime
 from redis import Redis
 from datetime import datetime
 import uuid
 
 
+def dow(func):
+    """
+    Database operations wrapper
+    """
+
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            return [True, f"INTERNAL-{str(e)}"]
+
+    return wrapper
+
+
 class TradeCRUD:
     def __init__(self, r: Redis) -> None:
         self.r = r
         pass
-
-    # def create(self, trade) -> uuid.UUID:
-    #     new_trade = Trade(
-    #         timestamp=datetime.now().timestamp(),
-    #         buy_order_id=uuid.UUID(trade["buy_order_id"]),
-    #         sell_order_id=uuid.UUID(trade["sell_order_id"]),
-    #         quantity=trade["quantity"],
-    #         price=trade["price"],
-    #     )
-    #     self.session.add(new_trade)
-    #     self.session.commit()
-    #     return new_trade.trade_id
-
-    # def get(self, trade_id) -> uuid.UUID:
-    #     return self.session.query(Trade).get(uuid.UUID(trade_id))
-
-    # def get_all(self, limit, offset):
-    #     return self.session.query(Trade).offset(offset).limit(limit).all()
 
     def redis_trade_book_key():
         return f"trade_book_{datetime.now().strftime('%Y-%m-%d')}"
@@ -53,6 +48,7 @@ class TradeCRUD:
             "quantity": int(quantity),
         }
 
+    @dow
     def create_trade(self, trade):
         # Inconsistent
         trade_id = str(uuid.uuid4())
@@ -65,6 +61,7 @@ class TradeCRUD:
         self.r.lpush(TradeCRUD.redis_trade_id_consumption_list(), trade_id)
         return [True, None]
 
+    @dow
     def get_these_trades(self, trade_ids):
         trades = self.r.hmget(TradeCRUD.redis_trade_book_key(), trade_ids)
         trades_collection = []
@@ -77,18 +74,16 @@ class TradeCRUD:
             )
         return [True, trades_collection]
 
+    @dow
     def get_all(self, limit, offset):
-        try:
-            trade_ids = self.r.lrange(
-                TradeCRUD.redis_trade_id_list_key(), offset, offset + limit - 1
-            )
-            if len(trade_ids) == 0:
-                return [True, []]
-            return self.get_these_trades(trade_ids)
-        except Exception as e:
-            print(e)
-            return [False, f"INTERNAL-{str(e)}"]
+        trade_ids = self.r.lrange(
+            TradeCRUD.redis_trade_id_list_key(), offset, offset + limit - 1
+        )
+        if len(trade_ids) == 0:
+            return [True, []]
+        return self.get_these_trades(trade_ids)
 
+    @dow
     def get_new_trades(self, max=50):
         length = self.r.llen(TradeCRUD.redis_trade_id_consumption_list())
         trade_ids = self.r.rpop(
@@ -101,6 +96,8 @@ class TradeCRUD:
 
 # TODO: wrap all these in trycatch block
 class OrderCRUD:
+    SCALE_FACTOR = 1e5
+
     def __init__(self, r: Redis) -> None:
         self.r = r
         pass
@@ -136,50 +133,62 @@ class OrderCRUD:
     def make_order_book_value_string(order):
         return f"{order['timestamp']}|{order['side']}|{order['quantity']}|{order['price']}|{order['punched']}|{order['cancelled']}"
 
+    def get_score(price, timestamp, side):
+        price_scaled = price * OrderCRUD.SCALE_FACTOR
+        return round(price_scaled - round(timestamp)) * side * -1
+
+    @dow
     def create(self, order):
-        try:
-            print(order.model_dump())
-            order_id = uuid.uuid4()
-            order_string = f"{datetime.now().timestamp()}|{order.side}|{order.quantity}|{order.price}|0|0"
-            print(order_string)
-            self.r.hset(OrderCRUD.redis_order_book_key(), str(order_id), order_string)
-            self.r.rpush(OrderCRUD.redis_process_queue_key(), str(order_id))
-            self.r.lpush(OrderCRUD.redis_order_list_passive_key(), str(order_id))
-            return [True, None]
-        except Exception as e:
-            print(e)
-            return [False, f"INTERNAL-x"]
+        order_id = uuid.uuid4()
+        timestamp = datetime.now().timestamp()
+        order["timestamp"] = timestamp
+        order["order_id"] = order_id
+        order["punched"] = 0
+        order["cancelled"] = 0
+        self.r.hset(
+            OrderCRUD.redis_order_book_key(),
+            str(order_id),
+            OrderCRUD.make_order_book_value_string(order),
+        )
+        score = OrderCRUD.get_score(order["price"], order["timestamp"], order["side"])
+        self.r.zadd(
+            OrderCRUD.redis_order_matching_queue_key(order["side"]), {order_id: score}
+        )
+        return [True, order_id]
 
-    def delete(self, order_id):
-        try:
-            [status, order] = self.get(order_id)
-            print(order)
-            if not status:
-                return [False, "Order not found"]
-            if order["cancelled"] == 1:
-                return [False, "Order already cancelled"]
-            if order["punched"] != 0:
-                return [False, "Order is pending, you can't modify it"]
-            res = self.r.zrem(
-                OrderCRUD.redis_order_matching_queue_key(int(order["side"])),
-                str(order_id),
-            )
-            print("popped from matching queue")
-            if res == 0:
-                return [False, "Order is being processed"]
-            order['cancelled'] = 1
-            self.r.hset(
-                OrderCRUD.redis_order_book_key(),
-                str(order_id),
-                OrderCRUD.make_order_book_value_string(order)
-            )
-            print("set")
-            self.r.rpush(OrderCRUD.redis_process_queue_key(), order_id)
+    @dow
+    def pop_top_buy(self):
+        res = self.r.zpopmin(OrderCRUD.redis_order_matching_queue_key(1))
+        if len(res) == 0:
             return [True, None]
-        except Exception as e:
-            print(e)
-            return [False, f"INTERNAL-{str(e)}"]
+        return [True, (res[0][0].decode(), res[0][1])]
 
+    @dow
+    def pop_top_sell(self):
+        res = self.r.zpopmin(OrderCRUD.redis_order_matching_queue_key(-1))
+        if len(res) == 0:
+            return [True, None]
+        return [True, (res[0][0].decode(), res[0][1])]
+
+    @dow
+    def push_to_sell_match_queue(self, order_id, score):
+        res = self.r.zadd(
+            OrderCRUD.redis_order_matching_queue_key(-1), {order_id: score}
+        )
+        if res == 1:
+            return [True, None]
+        return [False, "Couldn't push to sell match queue"]
+
+    @dow
+    def push_to_buy_match_queue(self, order_id, score):
+        res = self.r.zadd(
+            OrderCRUD.redis_order_matching_queue_key(1), {order_id: score}
+        )
+        if res == 1:
+            return [True, None]
+        return [False, "Couldn't push to buy match queue"]
+
+    @dow
     def update_punched(self, order_id, punched):
         [status, order] = self.get(order_id)
         if status:
@@ -192,65 +201,83 @@ class OrderCRUD:
             return [True, None]
         return [False, None]
 
-    # TODO synchronization
+    # To handle race conditions for delete(cancel) and update.
+    # If the order is updatable:
+    #     Remove from order match list
+    #     Update the order
+    @dow
     def update(self, order_id, updated_price, updated_quantity):
-        try:
-            print("start")
-            order_string = self.r.hget(OrderCRUD.redis_order_book_key(), str(order_id))
-            print("got order_string")
-            if not order_string:
-                return [False, "Order not found"]
-            print("splitting")
-            existing_order = OrderCRUD.split_order_value(order_string.decode())
+        order_string = self.r.hget(OrderCRUD.redis_order_book_key(), str(order_id))
+        if not order_string:
+            return [False, "Order not found"]
+        existing_order = OrderCRUD.split_order_value(order_string.decode())
+        if existing_order["cancelled"] == 1:
+            return [False, "Order already cancelled"]
+        if existing_order["punched"] != 0:
+            return [False, "Order is pending, you can't modify it"]
 
-            print("fetched order", existing_order)
-            if existing_order["cancelled"] == 1:
-                return [False, "Order already cancelled"]
-            if existing_order["punched"] != 0:
-                return [False, "Order is pending, you can't modify it"]
-            res = self.r.zrem(
-                OrderCRUD.redis_order_matching_queue_key(int(existing_order["side"])),
-                str(order_id),
-            )
-            if res == 0:
-                return [False, "Order is being processed"]
-            existing_order["price"] = updated_price
-            existing_order["quantity"] = updated_quantity
-            print("setting")
-            self.r.hset(
-                OrderCRUD.redis_order_book_key(),
-                str(order_id),
-                OrderCRUD.make_order_book_value_string(existing_order),
-            )
-            print("set")
-            self.r.rpush(OrderCRUD.redis_process_queue_key(), str(order_id))
-            print("queued")
-            return [True, None]
-        except Exception as e:
-            print(e)
-            return [False, f"INTERNAL-{str(e)}"]
+        # popping from order match list
+        res = self.r.zrem(
+            OrderCRUD.redis_order_matching_queue_key(int(existing_order["side"])),
+            str(order_id),
+        )
+        # if it's not in match list it's considered as being processed, it would be either in order process queue or match list
+        if res == 0:
+            return [False, "Order is being processed"]
+        existing_order["price"] = updated_price
+        existing_order["quantity"] = updated_quantity
+        self.r.hset(
+            OrderCRUD.redis_order_book_key(),
+            str(order_id),
+            OrderCRUD.make_order_book_value_string(existing_order),
+        )
+        # putting it back to order process queue
+        self.r.rpush(OrderCRUD.redis_process_queue_key(), str(order_id))
+        return [True, None]
 
+    @dow
+    def delete(self, order_id):
+        [status, order] = self.get(order_id)
+        if not status:
+            return [False, "Order not found"]
+        if order["cancelled"] == 1:
+            return [False, "Order already cancelled"]
+        if order["punched"] != 0:
+            return [False, "Order is pending, you can't modify it"]
+        # popping from order match list
+        res = self.r.zrem(
+            OrderCRUD.redis_order_matching_queue_key(int(order["side"])),
+            str(order_id),
+        )
+        # if it's not in match list it's considered as being processed, it would be either in order process queue or match list
+        if res == 0:
+            return [False, "Order is being processed"]
+        order["cancelled"] = 1
+        self.r.hset(
+            OrderCRUD.redis_order_book_key(),
+            str(order_id),
+            OrderCRUD.make_order_book_value_string(order),
+        )
+        self.r.rpush(OrderCRUD.redis_process_queue_key(), order_id)
+        return [True, None]
+
+    @dow
     def get(self, order_id):
-        try:
-            order_value = self.r.hget(OrderCRUD.redis_order_book_key(), order_id)
-            if order_value:
-                return [True, OrderCRUD.split_order_value(order_value.decode())]
-            return [True, None]
-        except Exception as e:
-            return [False, f"INTERNAL-{str(e)}"]
+        order_value = self.r.hget(OrderCRUD.redis_order_book_key(), order_id)
+        if order_value:
+            return [True, OrderCRUD.split_order_value(order_value.decode())]
+        return [True, None]
 
+    @dow
     def get_all(self, limit, offset):
-        try:
-            order_ids = self.r.lrange(
-                OrderCRUD.redis_order_list_passive_key(), offset, offset + limit - 1
-            )
-            if len(order_ids) == 0:
-                return [True, []]
-            return self.get_these_orders(order_ids)
-        except Exception as e:
-            print(e)
-            return [False, f"INTERNAL-{str(e)}"]
+        order_ids = self.r.lrange(
+            OrderCRUD.redis_order_list_passive_key(), offset, offset + limit - 1
+        )
+        if len(order_ids) == 0:
+            return [True, []]
+        return self.get_these_orders(order_ids)
 
+    @dow
     def get_all_queued_orders(self, max=1000):
         orders = [
             item.decode()
@@ -260,6 +287,7 @@ class OrderCRUD:
         ]
         return [True, orders]
 
+    @dow
     def get_these_orders(self, order_ids):
         orders = []
         order_book_value_strings = self.r.hmget(
@@ -280,63 +308,55 @@ class OrderCRUD:
             orders,
         ]
 
+    @dow
     def delete_from_order_process_queue(self, count):
         self.r.lpop(OrderCRUD.redis_process_queue_key(), count)
         return [True, None]
 
+    @dow
+    def push_to_om_queue(self, order_id):
+        [status, order] = self.get(order_id)
+        if not status:
+            return [status, order]
+        score = OrderCRUD.get_score(order)
+        res = self.r.zadd(
+            OrderCRUD.redis_order_matching_queue_key(), {order["order_id"]: score}
+        )
+        if res == 0:
+            return [False, "Couldn't add order_id"]
+        return [True, None]
 
-# class OrderCRUD:
-#     def __init__(self, session) -> None:
-#         self.session = session
-#         pass
+    @dow
+    def calculate_depth(self, depth, key):
+        price_quantity = {}
+        index = 0
+        while True:
+            l = self.r.zcard(key)
+            if l == index:
+                break
+            if l == 0:
+                break
+            order_id = self.r.zrange(key, index, index)[0]
+            [status, data] = self.get(order_id.decode())
+            if not status:
+                continue
+            if data:
+                price = data['price']
+                if len(price_quantity) == depth and str(price) not in price_quantity:
+                    break
+                quantity = data['quantity'] - data['punched']
+                if str(price) not in price_quantity:
+                    price_quantity[str(price)] = quantity
+                else:
+                    price_quantity[str(price)] += quantity
+                index += 1
+        return [True, price_quantity]
 
-#     def create(self, order) -> uuid.UUID:
-#         new_order = Order(
-#             timestamp=datetime.now().timestamp(),
-#             side=order["side"],
-#             quantity=order["quantity"],
-#             price=order["price"],
-#         )
-#         self.session.add(new_order)
-#         self.session.commit()
-#         return new_order.order_id
+    @dow
+    def calculate_depth_buy(self, depth):
+        return self.calculate_depth(depth, OrderCRUD.redis_order_matching_queue_key(1))
 
-#     def delete(self, order_id):
-#         order_to_delete = self.session.query(Order).get(uuid.UUID(order_id))
-#         if order_to_delete:
-#             self.session.delete(order_to_delete)
-#             self.session.commit()
+    @dow
+    def calculate_depth_sell(self, depth):
+        return self.calculate_depth(depth, OrderCRUD.redis_order_matching_queue_key(-1))
 
-#     def update(self, order_id, quantity, price):
-#         order_to_update = self.session.query(Order).get(uuid.UUID(order_id))
-#         setattr(order_to_update, "quantity", quantity)
-#         setattr(order_to_update, "price", price)
-#         setattr(order_to_update, "accepted", 0)
-#         self.session.commit()
-
-#     def update_punched(self, order_id, punched):
-#         order_to_update = self.session.query(Order).get(uuid.UUID(order_id))
-#         setattr(order_to_update, "punched", punched)
-#         self.session.commit()
-
-#     def get_all(self, limit, offset):
-#         return self.session.query(Order).offset(offset).limit(limit).all()
-
-#     def get(self, order_id):
-#         return self.session.query(Order).get(uuid.UUID(order_id))
-
-#     def get_new_orders(self):
-#         return self.session.query(Order).filter_by(accepted=False).all()
-
-#     def mark_orders_accepted(self, order_ids):
-#         self.session.query(Order).filter(
-#             Order.order_id.in_(map(lambda x: uuid.UUID(x), order_ids))
-#         ).update({"accepted": True}, synchronize_session=False)
-#         self.session.commit()
-
-#     def get_orders(self, order_ids):
-#         return (
-#             self.session.query(Order)
-#             .filter(Order.order_id.in_(map(lambda x: uuid.UUID(x), order_ids)))
-#             .all()
-#         )

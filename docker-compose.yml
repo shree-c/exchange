@@ -14,21 +14,18 @@ services:
       dockerfile: orderPunching.Dockerfile
     ports:
       - 8000:8000
-
     networks:
       - algotest
 
   order-matching:
     build:
       dockerfile: orderMatching.Dockerfile
-
     networks:
       - algotest
 
   exchange-queue:
     build:
       dockerfile: exchange.Dockerfile
-
     networks:
       - algotest
 

@@ -27,11 +27,7 @@ sqorders = {
     str(x.order_id): x for x in order_crud.get_orders([x for x in torders.keys()])
 }
 
-# print(sqorders)
-# for order in sqorders:
-#     print(
-#         f"{str(order.order_id)} | {round(order.price, 2)} | {datetime.fromtimestamp(order.timestamp)} | {torders[str(order.order_id)]}"
-#     )
+
 
 
 print("\n")

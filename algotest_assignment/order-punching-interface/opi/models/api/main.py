@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PositiveInt, PositiveFloat, UUID4
-from typing import Annotated, Literal, Any, List
+from typing import Literal, Any, List
 
 
 class OrderPending(BaseModel):
@@ -31,6 +31,7 @@ class ErrorResponse(ResponseBase):
     status: Literal["success", "fail", "error"] = "error"
     message: str
 
+
 class OrderPunched(BaseModel):
     order_id: UUID4
     timestamp: float
@@ -45,8 +46,6 @@ class OrderPunched(BaseModel):
 class MultiOrderResponse(SuccessResponse):
     data: List[OrderPunched]
 
-# class MultiOrderSuccess(SuccessResponse):
-#     data: MultiOrderResponse
 
 class SingleOrderResponse(SuccessResponse):
     data: OrderPunched
