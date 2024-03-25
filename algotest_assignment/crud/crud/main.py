@@ -10,6 +10,7 @@ def dow(func):
     """
     Database operations wrapper
     """
+
     def wrapper(*args, **kwargs):
         try:
             x = func(*args, **kwargs)
@@ -57,9 +58,9 @@ class TradeCRUD:
             TradeCRUD.make_trade_value_string(trade),
         )
         self.r.lpush(TradeCRUD.redis_trade_id_list_key(), trade_id)
-        trade['trade_id'] = trade_id
-        self.r.publish('trades', json.dumps(trade))
-        print('published trade ...')
+        trade["trade_id"] = trade_id
+        self.r.publish("trades", json.dumps(trade))
+        print("published trade ...")
         return [True, None]
 
     @dow
@@ -217,7 +218,7 @@ class OrderCRUD:
         if existing_order["cancelled"] == 1:
             return [False, "Order already cancelled"]
         if existing_order["punched"] != 0:
-            if existing_order['punched'] != existing_order['quantity']:
+            if existing_order["punched"] != existing_order["quantity"]:
                 return [False, "Order is pending, you can't modify it"]
             else:
                 return [False, "Order is filled, you can't modify it"]
@@ -239,8 +240,8 @@ class OrderCRUD:
             OrderCRUD.make_order_book_value_string(existing_order),
         )
         # pushing it back
-        self.push_to_om_queue(str(order_id))
-        return [True, None]
+        print("pushing it back to order m queue")
+        return self.push_to_om_queue(str(order_id))
 
     @dow
     def delete(self, order_id):
@@ -258,6 +259,7 @@ class OrderCRUD:
         )
         # if it's not in match list it's considered as being processed, it would be either in order process queue or match list
         if res == 0:
+            self.push_to_om_queue(str(order_id))
             return [False, "Order is being processed"]
         order["cancelled"] = 1
         self.r.hset(
@@ -311,10 +313,10 @@ class OrderCRUD:
         [status, data] = self.get(order_id)
         if not status:
             return [status, data]
-        score = OrderCRUD.get_score(data)
+        score = OrderCRUD.get_score(data["price"], data["timestamp"], data["side"])
         res = self.r.zadd(
             OrderCRUD.redis_order_matching_queue_key(data["side"]),
-            {data["order_id"]: score},
+            {order_id: score},
         )
         if res == 0:
             return [False, "Couldn't add order_id"]

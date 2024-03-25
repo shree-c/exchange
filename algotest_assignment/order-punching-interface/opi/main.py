@@ -18,6 +18,7 @@ from asyncio import sleep
 from crud import OrderCRUD, TradeCRUD
 from redis import Redis
 from redis.asyncio import Redis as ARedis
+from redis import Redis
 
 app = FastAPI(
     responses={
@@ -35,7 +36,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from redis import Redis
 
 r = Redis(host=env_settings.redis_host, password=env_settings.redis_password)
 r_async = ARedis(host=env_settings.redis_host, password=env_settings.redis_password)
@@ -48,7 +48,7 @@ async def process_order(order: OrderPending):
     [status, data] = order_crud.create(order.model_dump())
     if status:
         return SuccessResponse(data={"order_id": data})
-    if data.startswith("INTERNAL"):
+    if data and data.startswith("INTERNAL"):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
@@ -64,7 +64,7 @@ async def update_order(order: UpdateOrder, order_id: UUID4):
     )
     if status:
         return SuccessResponse(data=None)
-    if data.startswith("INTERNAL"):
+    if data and data.startswith("INTERNAL"):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
@@ -78,7 +78,7 @@ async def delete_order(order_id: UUID4):
     [status, data] = order_crud.delete(str(order_id))
     if status:
         return SuccessResponse(data=None)
-    if data.startswith("INTERNAL"):
+    if data and data.startswith("INTERNAL"):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
@@ -92,7 +92,7 @@ async def get_order(order_id: UUID4):
     [status, data] = order_crud.get(str(order_id))
     if status:
         return SingleOrderResponse(data=OrderPunched(**data, order_id=order_id))
-    if data.startswith("INTERNAL"):
+    if data and data.startswith("INTERNAL"):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )
@@ -111,7 +111,7 @@ async def get_all_orders(pagination: LimitAndOffset = Depends()):
     [status, data] = order_crud.get_all(pagination.limit, pagination.offset)
     if status:
         return MultiOrderResponse(data=list(map(lambda x: OrderPunched(**x), data)))
-    if data.startswith("INTERNAL"):
+    if data and data.startswith("INTERNAL"):
         return JSONResponse(
             status_code=500, content=ErrorResponse(message=data).model_dump()
         )

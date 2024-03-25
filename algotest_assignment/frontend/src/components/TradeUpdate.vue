@@ -4,7 +4,8 @@
       {{ wsData.length > 0 ? wsData[wsData.length - 1].price : 0 }} : LTP
     </div>
     <DataTable
-      :value="wsData.reverse()"
+      v-if="wsData"
+      :value="wsData"
       size="small"
       state-storage="local"
       state-key="trade-table"
@@ -45,7 +46,7 @@
 
 <script setup lang="ts">
 import Button from 'primevue/button'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onErrorCaptured, onMounted, ref } from 'vue'
 import InputNumber from 'primevue/inputnumber'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -54,10 +55,11 @@ const wsData = ref<TradeUpdate[]>([])
 let ws: WebSocket | null = null
 const rowsKept = ref<number>(20)
 function connect() {
+  console.log('connect.........')
   if (ws) {
     ws.close()
   }
-  ws = new WebSocket(`ws://localhost:8000/trade-update?max=10`)
+  ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/trade-update?max=20`)
 }
 
 onMounted(() => {
@@ -73,6 +75,11 @@ onBeforeUnmount(() => {
   if (ws) {
     ws.close()
   }
+})
+
+
+onErrorCaptured((er) => {
+  console.log(er)
 })
 </script>
 

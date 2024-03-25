@@ -33,7 +33,6 @@ const max = computed(() => {
 function transformForTable(priceQuantityMap: Record<string, number>) {
   return Object.entries(priceQuantityMap).reduce(
     (prev: { price: number; quantity: number }[], cur) => {
-      // prev[cur[0]] = cur[1]
       prev.push({
         price: +cur[0],
         quantity: cur[1]
@@ -45,7 +44,7 @@ function transformForTable(priceQuantityMap: Record<string, number>) {
 }
 
 onMounted(() => {
-  const ws = new WebSocket('ws://localhost:8000/depth')
+  const ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/depth`)
   ws.onmessage = (data) => {
     wsData.value = JSON.parse(data.data)
   }

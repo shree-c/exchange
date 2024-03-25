@@ -1,11 +1,11 @@
-FROM node:alpine as build-step
+FROM node:alpine as builder
 WORKDIR /app
+COPY /algotest_assignment/frontend/package*.json /app/
+RUN npm install --production
 COPY /algotest_assignment/frontend /app
-RUN npm install
 RUN npm run build 
-FROM nginx
-COPY --from=build-step /app/dist /usr/share/nginx/html
-EXPOSE 80
-STOPSIGNAL SIGTERM
-RUN ["echo", "frontend available at http://localhost:8080"]
+EXPOSE 8080
+FROM nginx:alpine AS nginx
+COPY --from=builder /app/dist /usr/share/nginx/html
+EXPOSE 80  
 CMD ["nginx", "-g", "daemon off;"]
