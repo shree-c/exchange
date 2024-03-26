@@ -34,11 +34,14 @@ import InputNumber from 'primevue/inputnumber'
 import { client } from '@/network/client'
 import { useLocalStorage } from '@vueuse/core'
 import { useNetworkWrapper } from '@/composables/networkWrapper'
+import { inject } from 'vue'
+import type { Ref } from 'vue'
 const { networkWrapper, toast } = useNetworkWrapper()
 
 const side = useLocalStorage<-1 | 1>('side', 1)
 const quantity = useLocalStorage<number>('quantity', 1)
 const price = useLocalStorage<number>('price', 1)
+const orderPunchUpdate = inject<Ref<number>>('orderPunchUpdate')
 // events
 async function punchTrade() {
   await networkWrapper(async () => {
@@ -53,6 +56,8 @@ async function punchTrade() {
         summary: `Order created. ${data.data.order_id}`,
         life: 5000
       })
+      if (orderPunchUpdate)
+        orderPunchUpdate.value = Math.random() * 10
     }
   })
 }

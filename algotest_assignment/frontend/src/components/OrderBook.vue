@@ -113,23 +113,28 @@ import Column from 'primevue/column'
 import InputNumber from 'primevue/inputnumber'
 import { client } from '@/network/client'
 import { useNetworkWrapper } from '@/composables/networkWrapper'
-const { networkWrapper, toast } = useNetworkWrapper()
-import { onMounted, ref } from 'vue'
+import { watch, ref } from 'vue'
 import type { Order } from '@/types/main'
 import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
 import FloatLabel from 'primevue/floatlabel'
 import { FilterMatchMode } from 'primevue/api'
+const props = defineProps<{
+  tradeUpdateLength: number
+}>()
 // state
+const { networkWrapper, toast } = useNetworkWrapper()
 const editingRows = ref()
-const limit = useLocalStorage('limit', 10)
+const limit = useLocalStorage('limit-x', 100)
 const ordersData = ref<Order[]>([])
 const filters = ref({
   global: { value: null, matchMode: FilterMatchMode.CONTAINS }
 })
-onMounted(async () => {
+watch(()=> props.tradeUpdateLength, async ()=> {
   await fetchOrders()
+}, {
+  immediate: true,
 })
 // events
 async function fetchOrders() {
@@ -174,6 +179,7 @@ async function flushDb() {
   networkWrapper(async () => {
     const { data } = await client.get('flush-database')
     if (data.status === 'success') {
+      await fetchOrders()
       toast.add({
         severity: 'success',
         summary: 'Database flush successful.',

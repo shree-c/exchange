@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div v-if="wsData">
     <div class="text-3xl ml-auto w-max font-mono">
       {{ wsData.length > 0 ? wsData[wsData.length - 1].price : 0 }} : LTP
     </div>
@@ -14,7 +14,6 @@
     >
       <template #header>
         <div class="w-max ml-auto space-x-2">
-          <InputNumber input-class="w-28" v-model="rowsKept" :min="1" />
           <Button size="small" label="Reconnect" @click="connect" />
           <Button
             label="Clear"
@@ -46,12 +45,17 @@
 
 <script setup lang="ts">
 import Button from 'primevue/button'
-import { onBeforeUnmount, onErrorCaptured, onMounted, ref } from 'vue'
-import InputNumber from 'primevue/inputnumber'
+import { computed, onBeforeUnmount, onErrorCaptured, onMounted, ref } from 'vue'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
 import type { TradeUpdate } from '@/types/main'
-const wsData = ref<TradeUpdate[]>([])
+const props =  defineProps<{
+  tradeUpdate: TradeUpdate[]
+}>()
+const emits = defineEmits<{
+  (e: 'update:tradeUpdate', v: TradeUpdate[]): void
+}>()
+
 let ws: WebSocket | null = null
 const rowsKept = ref<number>(20)
 function connect() {
@@ -59,8 +63,18 @@ function connect() {
   if (ws) {
     ws.close()
   }
-  ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/trade-update?max=20`)
+  ws = new WebSocket(`${import.meta.env.VITE_WS_URL}/trade-update`)
 }
+
+const wsData = computed({
+  get: ()=> {
+    return props.tradeUpdate
+  },
+
+  set: (value: TradeUpdate[])=> {
+    emits('update:tradeUpdate', value)
+  }
+})
 
 onMounted(() => {
   connect()

@@ -2,7 +2,13 @@
 import OrderPunching from '@/components/OrderPunching.vue'
 import OrderBook from '@/components/OrderBook.vue'
 import TradeUpdate from '@/components/TradeUpdate.vue'
+import type { TradeUpdate as TradeUpdateType } from '@/types/main'
 import BidAskTable from '@/components/BidAskTable.vue'
+import {provide, ref} from 'vue'
+const wsData = ref<TradeUpdateType[]>([])
+const orderPunchUpdate = ref<number>(0)
+provide('orderPunchUpdate', orderPunchUpdate)
+
 
 </script>
 
@@ -15,10 +21,10 @@ import BidAskTable from '@/components/BidAskTable.vue'
       <OrderPunching />
     </div>
     <div>
-      <TradeUpdate />
+      <TradeUpdate v-model:trade-update="wsData"/>
     </div>
     <div>
-      <OrderBook />
+      <OrderBook :trade-update-length="(wsData ? wsData.length : 0) + orderPunchUpdate" />
     </div>
   </div>
 
