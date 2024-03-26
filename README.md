@@ -7,7 +7,7 @@
 docker compose build
 ```
 
-* Change env variables if you need (default values are set)
+* Change env variables if you need (default values are set). I have added a __sample__ .env file
 * Make sure port 3000 is free
 
 ```
@@ -21,7 +21,7 @@ docker compose up
 
 ## Architecture
 
-[](diagram.png)
+![](/diagram.png)
 
 * The app has two microservices **order punching interface** and **order matching engine**
 * I am using redis db for fast transactions for matching orders

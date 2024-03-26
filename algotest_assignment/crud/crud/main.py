@@ -58,7 +58,7 @@ class TradeCRUD:
         )
         self.r.lpush(TradeCRUD.redis_trade_id_list_key(), trade_id)
         trade["trade_id"] = trade_id
-        self.r.publish("trades", json.dumps(trade))
+        self.r.publish(env_settings.trade_channel_name, json.dumps(trade))
         print("published trade ...")
         return [True, None]
 

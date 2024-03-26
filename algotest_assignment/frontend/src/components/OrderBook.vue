@@ -19,7 +19,7 @@
       :global-filter-fields="['order_id', 'quantity', 'price', 'side']"
     >
       <template #header>
-        <div class="w-max ml-auto space-x-2 flex items-center">
+        <div class="flex-wrap w-max ml-auto space-x-2 flex items-center">
           <div>Last</div>
           <FloatLabel>
             <InputNumber v-model:model-value="limit" :min="0" :max="500" />

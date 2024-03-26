@@ -9,5 +9,6 @@ class Settings(BaseSettings):
   crud_order_book_prefix: str = "order_book_"
   crud_order_match_queue_prefix: str = "sorted_or_"
   crud_order_id_list_prefix: str = "order_list_"
+  trade_channel_name:str = "trades"
 
 env_settings = Settings()

@@ -16,7 +16,7 @@ from opi.models.api.main import (
     LimitAndOffset
 )
 from asyncio import sleep
-from crud import OrderCRUD, TradeCRUD
+from crud import OrderCRUD, TradeCRUD, env_settings as crud_env_settings
 from redis import Redis
 from redis.asyncio import Redis as ARedis
 from redis import Redis
@@ -136,11 +136,11 @@ async def get_all_trades(ws: WebSocket):
 
 
 @app.websocket("/trade-update")
-async def get_all_trades(ws: WebSocket, max: int = 50):
+async def get_all_trades(ws: WebSocket):
     try:
         print("connection open")
         pubsub = r_async.pubsub()
-        await pubsub.subscribe("trades")
+        await pubsub.subscribe(crud_env_settings.trade_channel_name)
         await ws.accept()
         while True:
             print("loop start")
