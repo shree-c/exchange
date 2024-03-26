@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from opi.models.env import env_settings
 import json
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, UUID4
+from pydantic import UUID4
 from opi.models.api.main import (
     UpdateOrder,
     ErrorResponse,
@@ -13,6 +13,7 @@ from opi.models.api.main import (
     OrderPunched,
     OrderPending,
     SingleOrderResponse,
+    LimitAndOffset
 )
 from asyncio import sleep
 from crud import OrderCRUD, TradeCRUD
@@ -99,12 +100,6 @@ async def get_order(order_id: UUID4):
     return JSONResponse(
         status_code=404, content=FailResponse(data={"message": data}).model_dump()
     )
-
-
-class LimitAndOffset(BaseModel):
-    limit: int = Field(ge=1, le=500)
-    offset: int = Field(ge=0)
-
 
 @app.get("/order/all", response_model=MultiOrderResponse)
 async def get_all_orders(pagination: LimitAndOffset = Depends()):

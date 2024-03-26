@@ -36,7 +36,6 @@ class TradeCRUD:
         return f"{trade['timestamp']}|{trade['buy_order_id']}|{trade['sell_order_id']}|{trade['price']}|{trade['quantity']}"
 
     def split_trade_value(trade_value):
-        # TODO
         [timestamp, buy_order_id, sell_order_id, price, quantity] = trade_value.split(
             "|"
         )
@@ -96,7 +95,6 @@ class TradeCRUD:
         return self.get_these_trades(trade_ids)
 
 
-# TODO: wrap all these in trycatch block
 class OrderCRUD:
     SCALE_FACTOR = 1e5
 

@@ -14,12 +14,14 @@ docker compose build
 docker compose up
 ```
 
-* You will see a web app where you will see *bid-ask table*, *punch orders*, *trade stream*, and *order book*
+* The web app can be accessed at http://localhost:3000. It has *bid-ask table*, *punch orders*, *trade stream*, and *order book*
 
-* You can modify and cancel orders in order book. Order book has pagination
+* You can modify and cancel orders in order book.
 
 
 ## Architecture
+
+[](diagram.png)
 
 * The app has two microservices **order punching interface** and **order matching engine**
 * I am using redis db for fast transactions for matching orders
@@ -36,10 +38,13 @@ docker compose up
 
 #### Order match queue
 
-* Order match queue is sorted set with O(log(n)) insertion and deletion
+* Order match queue is sorted set with complexity of O(log(n)) for insertion and deletion. Redis use skip lists to store strings sorted by the score assigned to them.
 * The idea is to have order_ids ordered by bid/ask price and by time of entry
-* A score is calculated to based of bid/ask price and time of entry : **(bid/ask *SCALE) - time of entry
-* larger the time lower the score, higher the bid/ask price higher the order.
+* A score is calculated to based of bid/ask price and time of entry : __(bid or ask * SCALE)__ - time of entry
+* larger the time lower the score, higher the bid/ask price higher the score
 * multiply bid or ask by -1 to have them in opposite order so that it's easier to pop
+* When a suitable buyer and seller is found a trade happens. Trade is added to trade book and is published to redis pubsub channel. One can subscribe to pubsub channel to listen to updates.
 
 #### Race conditions
+
+* To prevent race conditions I am popping order ids before i inspect them so that they are not cancelled/update/punched during that

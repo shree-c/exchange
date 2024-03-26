@@ -1,4 +1,4 @@
-from pydantic import BaseModel, PositiveInt, PositiveFloat, UUID4
+from pydantic import BaseModel, PositiveInt, PositiveFloat, UUID4, Field
 from typing import Literal, Any, List
 
 
@@ -49,3 +49,8 @@ class MultiOrderResponse(SuccessResponse):
 
 class SingleOrderResponse(SuccessResponse):
     data: OrderPunched
+
+
+class LimitAndOffset(BaseModel):
+    limit: int = Field(ge=1, le=500)
+    offset: int = Field(ge=0)
