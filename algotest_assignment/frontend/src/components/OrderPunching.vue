@@ -50,7 +50,8 @@ async function punchTrade() {
     if (data.status === 'success') {
       toast.add({
         severity: 'success',
-        summary: `Order created. ${data.data.order_id}`
+        summary: `Order created. ${data.data.order_id}`,
+        life: 5000
       })
     }
   })

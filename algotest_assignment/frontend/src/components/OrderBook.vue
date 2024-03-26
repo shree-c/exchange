@@ -1,14 +1,18 @@
 <template>
   <div class="py-28 space-y-2 space-x-2">
-    <div>
-      <!-- <OrderManagement /> -->
+    <div class="text-3xl pl-2 py-3 font-light flex justify-between items-baseline">
+      <div>Order book</div>
+      <div>
+        <Button severity="danger" label="Flush Database" @click="flushDb"/>
+      </div>
     </div>
     <DataTable
+      v-if="ordersData"
       @row-edit-save="rowEditSave"
       v-model:editing-rows="editingRows"
       edit-mode="row"
       v-model:filters="filters"
-      :value="rdata"
+      :value="ordersData"
       paginator
       :rows="20"
       filterDisplay="row"
@@ -16,40 +20,18 @@
     >
       <template #header>
         <div class="w-max ml-auto space-x-2 flex items-center">
-          <div>Offset {{ offset }}</div>
+          <div>Last</div>
+          <FloatLabel>
+            <InputNumber v-model:model-value="limit" :min="0" :max="500" />
+            <label>Number of records</label>
+          </FloatLabel>
+          <Button size="small" label="Fetch" @click="fetchOrders" />
           <IconField iconPosition="left">
             <InputIcon>
               <i class="pi pi-search" />
             </InputIcon>
             <InputText v-model="filters['global'].value" placeholder="Keyword Search" />
           </IconField>
-          <FloatLabel>
-            <InputNumber v-model:model-value="limit" :min="0" :max="500" />
-            <label>Number of records</label>
-          </FloatLabel>
-          <Button
-            size="small"
-            label="Prev"
-            :disabled="offset == 0"
-            @click="
-              () => {
-                offset -= 1
-                fetchOrders()
-              }
-            "
-          />
-          <Button
-            size="small"
-            label="Next"
-            :disabled="rdata.length !== limit"
-            @click="
-              () => {
-                offset += 1
-                //fetchOrders()
-              }
-            "
-          />
-          <Button size="small" label="Reload" @click="fetchOrders" />
         </div>
       </template>
       <Column field="side" header="Side">
@@ -138,39 +120,36 @@ import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
 import FloatLabel from 'primevue/floatlabel'
-const editingRows = ref()
-// const toast = useToast()
-const limit = useLocalStorage('limit', 10)
-const offset = useLocalStorage('offset', 0)
-const rdata = ref<Order[]>([])
 import { FilterMatchMode } from 'primevue/api'
-
+// state
+const editingRows = ref()
+const limit = useLocalStorage('limit', 10)
+const ordersData = ref<Order[]>([])
 const filters = ref({
   global: { value: null, matchMode: FilterMatchMode.CONTAINS }
 })
-
 onMounted(async () => {
   await fetchOrders()
 })
-
 // events
 async function fetchOrders() {
   await networkWrapper(async () => {
     const { data } = await client.get('order/all', {
       params: {
         limit: limit.value,
-        offset: offset.value
+        offset: 0
       }
     })
     if (data.status === 'success') {
-      rdata.value = data.data
+      const orders = data.data as Order[]
+      ordersData.value = orders.sort((a, b) => b.timestamp - a.timestamp)
     }
   })
 }
 
 async function rowEditSave({ index, newData }: DataTableRowEditSaveEvent) {
   const res = await updateOrder(newData.quantity, newData.price, newData.order_id)
-  if (res) rdata.value[index] = newData
+  if (res) ordersData.value[index] = newData
 }
 
 async function cancelOrder(order_id: string) {
@@ -187,6 +166,19 @@ async function cancelOrder(order_id: string) {
         life: 3000
       })
       await fetchOrders()
+    }
+  })
+}
+
+async function flushDb() {
+  networkWrapper(async () => {
+    const { data } = await client.get('flush-database')
+    if (data.status === 'success') {
+      toast.add({
+        severity: 'success',
+        summary: 'Database flush successful.',
+        life: 3000
+      })
     }
   })
 }

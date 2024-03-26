@@ -163,3 +163,9 @@ async def get_all_trades(ws: WebSocket, max: int = 50):
         print("WS Exception: trade update, ", str(e))
     except Exception as e:
         print("/trade update exception ", str(e))
+
+# THIS IS ADDED FOR CONVENIENCE AND QUICK TESTING
+@app.get("/flush-database")
+async def flush_database():
+    await r_async.flushdb()
+    return SuccessResponse(data=None)

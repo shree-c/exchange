@@ -11,43 +11,60 @@ trade_crud = TradeCRUD(r)
 last_buy_id = ""
 last_sell_id = ""
 while True:
+    # order is popped before it is inspected avoid race condition (updates, cancellations)
     [status, top_buy_data] = order_crud.pop_top_buy()
     if not status:
-        print(top_buy_data, "no buy data")
-        if type(top_buy_data) == tuple:
-            order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
+        print("No buys available...")
         sleep(0.5)
         continue
     top_buy_id = top_buy_data[0]
-
     [status, top_sell_data] = order_crud.pop_top_sell()
     if not status:
-        print(top_sell_data)
-        if type(top_sell_data) == tuple:
-            order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
-        if type(top_buy_data) == tuple:
-            order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
+        # push buy back
+        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
+        print("No sells available")
         sleep(0.5)
         continue
     top_sell_id = top_sell_data[0]
-
     [buy_status, buy_order] = order_crud.get(top_buy_id)
-    if not buy_status or not buy_order:
-        print("Couldn't get order details for ", top_buy_id)
+    if not buy_status:
+        print(
+            f"Couldn't get buy order details:{top_buy_id} ",
+            "This should not have happened.",
+        )
+        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
+        order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
         sleep(0.5)
         continue
     [sell_status, sell_order] = order_crud.get(top_sell_id)
-    if not sell_status or not sell_order:
-        print("Couldn't get order details for ", top_sell_id)
+    if not sell_status:
+        print(
+            f"Couldn't get sell order details:{top_sell_id} ",
+            "This should not have happened.",
+        )
+        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
+        order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
         sleep(0.5)
         continue
 
     if buy_order["price"] >= sell_order["price"]:
         total_buy_quantity = buy_order["quantity"] - buy_order["punched"]
         total_sell_quantity = sell_order["quantity"] - sell_order["punched"]
+        if total_buy_quantity == 0:
+            print(f"Zero quantity order dangling in OM queue: {top_buy_id}")
+            sleep(0.5)
+            continue
+            
+        if total_sell_quantity == 0:
+            print(f"Zero quantity order dangling in OM queue: {top_sell_id}")
+            sleep(0.5)
+            continue
+
         punched = min([total_buy_quantity, total_sell_quantity])
         buy_remaining = total_buy_quantity - punched
         sell_remaining = total_sell_quantity - punched
+
+        # earliest order is given priority thus it's price is chosen
         price = (
             buy_order["price"]
             if buy_order["timestamp"] > sell_order["timestamp"]
@@ -65,6 +82,7 @@ while True:
             order_crud.update_punched(top_sell_id, punched + sell_order["punched"])
             trade_crud.create_trade(trade_order)
 
+        # push back is the order still has quantity left
         if buy_remaining != 0:
             [status, data] = order_crud.push_to_buy_match_queue(
                 top_buy_id, top_buy_data[1]
@@ -78,9 +96,8 @@ while True:
             if not status:
                 print(f"couldn't push {top_sell_id} to order match queue")
     else:
-        if type(top_sell_data) == tuple:
-            order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
-        if type(top_buy_data) == tuple:
-            order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
+        # pushing it back
+        order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
+        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
     print("next loop...")
     sleep(env_settings.order_matching_interval)

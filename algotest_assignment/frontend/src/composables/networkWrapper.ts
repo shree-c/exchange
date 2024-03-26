@@ -38,7 +38,7 @@ export const useNetworkWrapper = () => {
         } else if (error.request) {
           toast.add({
             severity: 'error',
-            summary: 'No response received from client',
+            summary: 'No response received from the server',
             life: 3000
           })
           console.log(error.request)

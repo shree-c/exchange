@@ -1,13 +1,47 @@
 <template>
   <div>
+    <div class="text-3xl pl-2 py-3 font-light flex justify-between items-baseline">BID - ASK</div>
     <div class="flex gap-2">
       <DataTable class="flex-grow h-80" :value="transformForTable(wsData['buy'] || {})">
-        <Column field="quantity" header="Quantity" />
-        <Column field="price" header="Price" />
+        <Column field="price" header="Price">
+          <template #body="{ data }">
+            <div class="font-bold text-lg">
+              {{ data.price }}
+            </div>
+          </template>
+        </Column>
+        <Column field="quantity">
+          <template #header>
+            <div class="text-right w-full">Quantity</div>
+          </template>
+          <template #body="{ data }">
+            <div class="flex gap-20">
+              <div class="min-w-52 font-bold text-lg">{{ data.quantity }}</div>
+              <div class="flex-grow" v-if="data.quantity">
+                <DepthIndicator :percent="(data.quantity / max) * 100" />
+              </div>
+            </div>
+          </template>
+        </Column>
       </DataTable>
       <DataTable class="flex-grow h-80" :value="transformForTable(wsData['sell'] || {})">
-        <Column field="quantity" header="Quantity" />
-        <Column field="price" header="Price" />
+        <Column field="quantity" header="Quantity">
+          <template #body="{ data }">
+            <div class="flex gap-20">
+              <div class="flex-grow rotate-180" v-if="data.quantity">
+                <DepthIndicator :percent="(data.quantity / max) * 100" />
+              </div>
+              <div class="min-w-52 font-bold text-lg">{{ data.quantity }}</div>
+            </div>
+          </template>
+        </Column>
+        <Column field="price" header="Price">
+          <template #body="{ data }">
+            <div class="font-bold text-lg">
+              {{ data.price }}
+            </div>
+          </template>
+        </Column>
       </DataTable>
     </div>
   </div>
@@ -17,6 +51,7 @@
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import { ref, computed, onMounted } from 'vue'
+import DepthIndicator from '@/components/DepthIndicator.vue'
 
 const wsData = ref<any>({})
 const max = computed(() => {
