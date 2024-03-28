@@ -27,14 +27,10 @@ docker compose up
 * I am using redis db for fast transactions for matching orders
 
 ### Order punching interface
-* A http server to accepts request for order crud and trade streams.
+* A http server to accept request for order crud and trade streams.
 * I have used FastAPI framework for http server
 
 ### Order matching engine
-
-* When a trade is punched an unique id is generated to identify it and is stored in order book
-* I am using **Redis hash map** for order book for fast O(1) access
-* And then the order is inserted into **order match queue**
 
 ### Order matching algorithm
 * Buy order with highest bid is given priority and sell order with lowest ask is given priority.
