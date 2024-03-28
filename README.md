@@ -27,7 +27,7 @@ docker compose up
 * I am using redis db for fast transactions for matching orders
 
 ### Order punching interface
-* An http server to accepts request for order crud and trade streams.
+* A http server to accepts request for order crud and trade streams.
 * I have used FastAPI framework for http server
 
 ### Order matching engine
