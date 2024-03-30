@@ -96,8 +96,7 @@ class TradeCRUD:
 
 
 class OrderCRUD:
-    SCALE_FACTOR = 1e5
-
+    SCALE_FACTOR = 1e8
     def __init__(self, r: Redis) -> None:
         self.r = r
         pass
@@ -129,7 +128,11 @@ class OrderCRUD:
 
     def get_score(price, timestamp, side):
         price_scaled = price * OrderCRUD.SCALE_FACTOR
-        return round(price_scaled - round(timestamp)) * side * -1
+        if side == 1:
+            score = (price_scaled - (round(timestamp))) * -1
+        else:
+            score = (price_scaled + (round(timestamp)))
+        return score
 
     @dow
     def create(self, order):
@@ -154,7 +157,7 @@ class OrderCRUD:
         if res == 0:
             return [False, "Couldn't add to order match queue"]
         # for maintaining list of order ids by timestamp
-        # right to left: new to old
+        # right to left: new to ol
         self.r.rpush(OrderCRUD.redis_order_list_passive_key(), str(order_id))
         return [True, order_id]
 

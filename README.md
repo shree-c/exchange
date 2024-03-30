@@ -52,9 +52,14 @@ docker compose up
 
 #### Calculating score
 
-* SCALE here is just a large positive number which keeps score from going negative because timestamp is a large number, but the ordering works regardless without it.
-* For sell orders : (Ask_price * SCALE) - timestamp.
-* For buy orders : -1 * (bid_price * SCALE) - timestamp.
+* SCALE here is just a large positive number which reduces the impact of timestamp and price always remains the priority.
+* The is to get ascending scored based on our priority logic
+* For sell orders : (Ask_price * SCALE) + timestamp.
+  * lower the ask price lower the score
+  * lower the timestamp lower the score
+* For buy orders : -1 * ((bid_price * SCALE) - timestamp).
+  * higher the bid price high negative the score
+  * lower the time stamp more negative the score
 * Multiplied by -1 to keep both buy and sell scores in ascending order.
 
 #### Order matching engine internals
