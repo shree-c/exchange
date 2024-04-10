@@ -1,5 +1,6 @@
 from datetime import datetime
 from redis import Redis
+import sqlite3
 from datetime import datetime
 from crud.env import env_settings
 import json
@@ -98,6 +99,13 @@ class TradeCRUD:
 class OrderCRUD:
     SCALE_FACTOR = 1e8
     def __init__(self, r: Redis) -> None:
+        print(env_settings.state_change_log_db)
+        self.log_db_con = sqlite3.connect(env_settings.state_change_log_db)
+        self.log_db_cursor = self.log_db_con.cursor()
+        self.log_db_cursor.execute(
+            "CREATE TABLE IF NOT EXISTS STATE_CHANGES (message_id INTEGER PRIMARY KEY, order_id TEXT, order_data TEXT)"
+        )
+        self.log_db_con.commit()
         self.r = r
         pass
 
@@ -124,7 +132,10 @@ class OrderCRUD:
         }
 
     def make_order_book_value_string(order):
-        return f"{order['timestamp']}|{order['side']}|{order['quantity']}|{order['price']}|{order['punched']}|{order['cancelled']}"
+        x =  f"{order['timestamp']}|{order['side']}|{order['quantity']}|{order['price']}|{order['punched']}|{order['cancelled']}"
+        print(type(x), x)
+        return x
+
 
     def get_score(price, timestamp, side):
         price_scaled = price * OrderCRUD.SCALE_FACTOR
@@ -135,6 +146,22 @@ class OrderCRUD:
         return score
 
     @dow
+    def set_order_book(self, order_id, order_data):
+        # message_id = self.r.get(env_settings.last_message_id)
+        print(order_id, order_data)
+        cursor = self.log_db_cursor.execute(
+            f"INSERT INTO STATE_CHANGES (order_id, order_data) values('{str(order_id)}', '{order_data}')"
+        )
+        self.log_db_con.commit()
+        self.r.set(env_settings.last_message_id, cursor.lastrowid)
+        self.r.hset(
+            OrderCRUD.redis_order_book_key(),
+            str(order_id),
+            order_data
+        )
+        return [True, cursor.lastrowid]
+ 
+    @dow
     def create(self, order):
         order_id = str(uuid.uuid4())
         timestamp = datetime.now().timestamp()
@@ -143,11 +170,9 @@ class OrderCRUD:
         order["punched"] = 0
         order["cancelled"] = 0
         # into order book
-        self.r.hset(
-            OrderCRUD.redis_order_book_key(),
-            str(order_id),
-            OrderCRUD.make_order_book_value_string(order),
-        )
+        order_string = OrderCRUD.make_order_book_value_string(order)
+        print(order_string, type(order_string))
+        self.set_order_book(order_id, order_string)
         score = OrderCRUD.get_score(order["price"], order["timestamp"], order["side"])
         # into
         res = self.r.zadd(
@@ -156,9 +181,9 @@ class OrderCRUD:
         )
         if res == 0:
             return [False, "Couldn't add to order match queue"]
-        # for maintaining list of order ids by timestamp
-        # right to left: new to ol
         self.notify_new_state()
+        # for maintaining list of order ids by timestamp
+        # right to left: new to old
         self.r.rpush(OrderCRUD.redis_order_list_passive_key(), str(order_id))
         return [True, order_id]
 
@@ -242,12 +267,16 @@ class OrderCRUD:
         existing_order["price"] = updated_price
         existing_order["quantity"] = updated_quantity
         # updating order book
-        self.r.hset(
-            OrderCRUD.redis_order_book_key(),
-            str(order_id),
-            OrderCRUD.make_order_book_value_string(existing_order),
-        )
+
+        order_string = OrderCRUD.make_order_book_value_string(existing_order)
+        self.set_order_book(order_id, order_string)
+        # self.r.hset(
+        #     OrderCRUD.redis_order_book_key(),
+        #     str(order_id),
+        #     OrderCRUD.make_order_book_value_string(existing_order),
+        # )
         # pushing it back
+        self.push_to_om_queue(str(order_id))
         self.notify_new_state()
         return [True, None]
 
@@ -270,13 +299,10 @@ class OrderCRUD:
             self.push_to_om_queue(str(order_id))
             return [False, "Order is being processed"]
         order["cancelled"] = 1
-        self.r.hset(
-            OrderCRUD.redis_order_book_key(),
-            str(order_id),
-            OrderCRUD.make_order_book_value_string(order),
-        )
-        # not pushing it back
+        order_string = OrderCRUD.make_order_book_value_string(order)
+        self.set_order_book(order_id, order_string)
         self.notify_new_state()
+        # not pushing it back
         return [True, None]
 
     @dow

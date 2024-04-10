@@ -23,6 +23,9 @@ services:
       - order-matching
     env_file:
       - .env
+    volumes:
+      # - ${PWD}/data:/app/logs_data
+      - logs_db:/app/logs_data
 
   order-matching:
     build:
@@ -33,6 +36,9 @@ services:
       - redis
     env_file:
       - .env
+    volumes:
+      - logs_db:/app/logs_data
+      # - logs_db:/app/logs_data
 
   frontend:
     build:
@@ -49,4 +55,6 @@ networks:
 
 volumes:
   redis_data:
+    driver: local
+  logs_db:
     driver: local
