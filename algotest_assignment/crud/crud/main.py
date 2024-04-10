@@ -158,6 +158,7 @@ class OrderCRUD:
             return [False, "Couldn't add to order match queue"]
         # for maintaining list of order ids by timestamp
         # right to left: new to ol
+        self.notify_new_state()
         self.r.rpush(OrderCRUD.redis_order_list_passive_key(), str(order_id))
         return [True, order_id]
 
@@ -205,6 +206,12 @@ class OrderCRUD:
             )
             return [True, None]
         return [False, data]
+    
+    def notify_new_state(self):
+        self.r.lpush(env_settings.om_new_state_notify_key, '0')
+    
+    def wait_for_changes(self):
+        self.r.brpop(env_settings.om_new_state_notify_key)
 
     # To handle race conditions for delete(cancel) and update.
     # If the order is updatable:
@@ -241,8 +248,8 @@ class OrderCRUD:
             OrderCRUD.make_order_book_value_string(existing_order),
         )
         # pushing it back
-        print("pushing it back to order m queue")
-        return self.push_to_om_queue(str(order_id))
+        self.notify_new_state()
+        return [True, None]
 
     @dow
     def delete(self, order_id):
@@ -269,6 +276,7 @@ class OrderCRUD:
             OrderCRUD.make_order_book_value_string(order),
         )
         # not pushing it back
+        self.notify_new_state()
         return [True, None]
 
     @dow

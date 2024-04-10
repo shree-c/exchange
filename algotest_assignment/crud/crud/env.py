@@ -10,5 +10,6 @@ class Settings(BaseSettings):
   crud_order_match_queue_prefix: str = "sorted_or_"
   crud_order_id_list_prefix: str = "order_list_"
   trade_channel_name:str = "trades"
+  om_new_state_notify_key:str = "om_new_state"
 
 env_settings = Settings()

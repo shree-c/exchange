@@ -11,11 +11,11 @@ trade_crud = TradeCRUD(r)
 last_buy_id = ""
 last_sell_id = ""
 while True:
+    order_crud.wait_for_changes()
     # order is popped before it is inspected avoid race condition (updates, cancellations)
     [status, top_buy_data] = order_crud.pop_top_buy()
     if not status:
         print("No buys available...")
-        sleep(0.5)
         continue
     top_buy_id = top_buy_data[0]
     [status, top_sell_data] = order_crud.pop_top_sell()
@@ -23,7 +23,6 @@ while True:
         # push buy back
         order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
         print("No sells available")
-        sleep(0.5)
         continue
     top_sell_id = top_sell_data[0]
     [buy_status, buy_order] = order_crud.get(top_buy_id)
@@ -34,7 +33,6 @@ while True:
         )
         order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
         order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
-        sleep(0.5)
         continue
     [sell_status, sell_order] = order_crud.get(top_sell_id)
     if not sell_status:
@@ -43,8 +41,6 @@ while True:
             "This should not have happened.",
         )
         order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
-        order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
-        sleep(0.5)
         continue
 
     if buy_order["price"] >= sell_order["price"]:
@@ -52,12 +48,10 @@ while True:
         total_sell_quantity = sell_order["quantity"] - sell_order["punched"]
         if total_buy_quantity == 0:
             print(f"Zero quantity order dangling in OM queue: {top_buy_id}")
-            sleep(0.5)
             continue
             
         if total_sell_quantity == 0:
             print(f"Zero quantity order dangling in OM queue: {top_sell_id}")
-            sleep(0.5)
             continue
 
         punched = min([total_buy_quantity, total_sell_quantity])
@@ -83,21 +77,27 @@ while True:
             trade_crud.create_trade(trade_order)
 
         # push back is the order still has quantity left
+        has_been_added_back = False
         if buy_remaining != 0:
             [status, data] = order_crud.push_to_buy_match_queue(
                 top_buy_id, top_buy_data[1]
             )
             if not status:
                 print(f"couldn't push {top_buy_id} to order match queue")
+            else:
+                has_been_added_back = True
         if sell_remaining != 0:
             [status, data] = order_crud.push_to_sell_match_queue(
                 top_sell_id, top_sell_data[1]
             )
             if not status:
                 print(f"couldn't push {top_sell_id} to order match queue")
+            else:
+                has_been_added_back = True
+        if has_been_added_back:
+            order_crud.notify_new_state()
     else:
         # pushing it back
         order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
         order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
     print("next loop...")
-    sleep(env_settings.order_matching_interval)
