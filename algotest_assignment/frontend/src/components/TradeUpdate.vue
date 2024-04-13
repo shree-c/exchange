@@ -59,7 +59,6 @@ const emits = defineEmits<{
 let ws: WebSocket | null = null
 const rowsKept = ref<number>(20)
 function connect() {
-  console.log('connect.........')
   if (ws) {
     ws.close()
   }

@@ -3,7 +3,6 @@ from time import perf_counter
 import pickle
 from random import random, randint
 import json
-from time import sleep
 
 url = "http://localhost:8000/order"
 

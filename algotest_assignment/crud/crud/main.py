@@ -1,4 +1,5 @@
 from datetime import datetime
+import traceback
 import pika.channel
 from redis import Redis
 import sqlite3
@@ -13,12 +14,12 @@ def dow(func):
     """
     Database operations wrapper
     """
-
     def wrapper(*args, **kwargs):
         try:
             x = func(*args, **kwargs)
             return x
         except Exception as e:
+            print(traceback.format_exc())
             return [False, f"INTERNAL-{str(e)}"]
 
     return wrapper
@@ -52,7 +53,6 @@ class TradeCRUD:
 
     @dow
     def create_trade(self, trade):
-        # Inconsistent
         trade_id = str(uuid.uuid4())
         self.r.hset(
             TradeCRUD.redis_trade_book_key(),
@@ -118,14 +118,11 @@ class OrderCRUD:
 
     @dow
     def update_punched(self, order_id, punched_quantity, timestamp):
-        try:
-            self.persistent_db_cursor.execute(
-                f"UPDATE ORDER_BOOK SET punched = punched + {punched_quantity}, timestamp = {timestamp} where order_id = '{order_id}'"
-            )
-            self.persistent_db_con.commit()
-        except Exception as e:
-            print("UPDATE PUNCHED !!! EEEEEEEEEEEEEEEEERROR")
-            print(e)
+        self.persistent_db_cursor.execute(
+            f"UPDATE ORDER_BOOK SET punched = punched + {punched_quantity}, timestamp = {timestamp} where order_id = '{order_id}'"
+        )
+        self.persistent_db_con.commit()
+        return [True, None]
 
     @dow
     def update_order(self, order_id, price, timestamp, cancelled):
@@ -137,13 +134,11 @@ class OrderCRUD:
 
     @dow
     def save_order(self, order):
-        try:
-            self.persistent_db_cursor.execute(
-                f"INSERT INTO ORDER_BOOK (order_id, side, price, timestamp, punched, quantity, cancelled) values('{order['order_id']}', {order['side']}, {order['price']}, {order['timestamp']}, {order['punched']}, {order['quantity']}, {order['cancelled']})"
-            )
-            self.persistent_db_con.commit()
-        except Exception as e:
-            print(e)
+        self.persistent_db_cursor.execute(
+            f"INSERT INTO ORDER_BOOK (order_id, side, price, timestamp, punched, quantity, cancelled) values('{order['order_id']}', {order['side']}, {order['price']}, {order['timestamp']}, {order['punched']}, {order['quantity']}, {order['cancelled']})"
+        )
+        self.persistent_db_con.commit()
+        return [True, None]
 
     @dow
     def log_state_change(self, change):
@@ -182,7 +177,7 @@ class OrderCRUD:
             routing_key=env_settings.accumulator_queue_key,
             body=json.dumps(
                 {
-                    "action": "update",
+                    "action": "cancel",
                     "order_id": order_id,
                 }
             ),
@@ -217,15 +212,10 @@ class OrderCRUD:
 
     @dow
     def get_all(self, limit, offset):
-        try:
-            result = self.persistent_db_cursor.execute(
-                f"SELECT * FROM ORDER_BOOK LIMIT {limit} OFFSET {offset}"
-            ).fetchall()
-            orders = [
-                OrderCRUD.serialize_order_tuple(order_tuple) for order_tuple in result
-            ]
-            print(orders)
-            return [True, orders]
-        except Exception as e:
-            print("GETALL!!!")
-            print(e)
+        result = self.persistent_db_cursor.execute(
+            f"SELECT * FROM ORDER_BOOK LIMIT {limit} OFFSET {offset}"
+        ).fetchall()
+        orders = [
+            OrderCRUD.serialize_order_tuple(order_tuple) for order_tuple in result
+        ]
+        return [True, orders]

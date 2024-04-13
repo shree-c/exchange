@@ -11,6 +11,15 @@ services:
     env_file:
       - .env
 
+  rabbitmq:
+    image: rabbitmq:latest
+    ports:
+      - 5672:5672
+    env_file:
+      - .env
+    networks:
+      - algotest
+
   api-exchange:
     build:
       dockerfile: orderPunching.Dockerfile
@@ -24,7 +33,6 @@ services:
     env_file:
       - .env
     volumes:
-      # - ${PWD}/data:/app/logs_data
       - logs_db:/app/logs_data
 
   order-matching:
@@ -38,7 +46,18 @@ services:
       - .env
     volumes:
       - logs_db:/app/logs_data
-      # - logs_db:/app/logs_data
+
+  state-manager:
+    build:
+      dockerfile: stateManager.Dockerfile
+    networks:
+      - algotest
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    volumes:
+      - logs_db:/app/logs_data
 
   frontend:
     build:

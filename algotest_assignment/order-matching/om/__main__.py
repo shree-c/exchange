@@ -7,7 +7,6 @@ from om.accumulator import accumulator
 from om.match_engine import match_engine
 from collections import deque
 import pika
-
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(
         "localhost",
@@ -25,22 +24,12 @@ channel.exchange_declare(
     exchange_type='fanout',
     durable=True
 )
-# BID_ASK_QUEUE_CHANNEL_KEY = "bid_ask"
-# TRADE_UPDATES_CHANNEL_KEY = "trade_updates"
-# STATE_CHANGE_CHANNEL_KEY = "order_book_state_changes"
-# ACCUMULATOR_CHANNEL_KEY = "accumulator"
-DEPTH = 5
-
-# channel.queue_declare(queue=env_settings.bid_ask_exchange, durable=False)
+DEPTH = env_settings.bid_ask_depth
 channel.queue_declare(queue=env_settings.trade_updates_exchange_name, durable=True)
 channel.queue_declare(queue=env_settings.state_change_queue_key, durable=True)
 channel.queue_declare(queue=env_settings.accumulator_queue_key, durable=True)
-
-
 class MyManager(SyncManager):
     pass
-
-
 MyManager.register("priority_queue", PriorityQueue)
 MyManager.register("set", set)
 MyManager.register("deque", deque)
@@ -53,6 +42,8 @@ with MyManager() as manager:
         "price_priority_queue_sell": manager.priority_queue(),
         "price_active_set_buy": manager.set(),
         "price_active_set_sell": manager.set(),
+        "last_added_buy": manager.Value(),
+        "last_added_sell": manager.Value()
     }
     trade_publish_queue = manager.Queue(maxsize=-1)
     mutation_lock = Lock()
