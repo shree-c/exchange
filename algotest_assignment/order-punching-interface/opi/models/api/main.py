@@ -33,12 +33,11 @@ class ErrorResponse(ResponseBase):
 
 
 class OrderPunched(BaseModel):
-    order_id: UUID4
+    order_id: str
     timestamp: float
     punched: int
     quantity: int
     price: float
-    punched: float
     side: Literal[1, -1]
     cancelled: Literal[1, 0]
 

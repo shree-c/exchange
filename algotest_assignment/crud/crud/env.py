@@ -11,7 +11,11 @@ class Settings(BaseSettings):
   crud_order_id_list_prefix: str = "order_list_"
   trade_channel_name:str = "trades"
   om_new_state_notify_key:str = "om_new_state"
-  state_change_log_db:str = "/app/logs_data/state_change_log.db"
+  state_change_log_db:str = "/home/shree/state_change_log.db"
   last_message_id:str = "last_message_id"
+
+
+  # new stuff
+  accumulator_queue_key:str = "accumulator"
 
 env_settings = Settings()

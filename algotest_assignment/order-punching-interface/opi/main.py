@@ -13,13 +13,18 @@ from opi.models.api.main import (
     OrderPunched,
     OrderPending,
     SingleOrderResponse,
-    LimitAndOffset
+    LimitAndOffset,
 )
+import pika
 from asyncio import sleep
 from crud import OrderCRUD, TradeCRUD, env_settings as crud_env_settings
 from redis import Redis
 from redis.asyncio import Redis as ARedis
 from redis import Redis
+import asyncio
+from aio_pika import ExchangeType, connect, connect_robust
+from aio_pika.pool import Pool
+from aio_pika.abc import AbstractIncomingMessage
 
 app = FastAPI(
     responses={
@@ -38,10 +43,41 @@ app.add_middleware(
 )
 
 
-r = Redis(host=env_settings.redis_host, password=env_settings.redis_password)
-r_async = ARedis(host=env_settings.redis_host, password=env_settings.redis_password)
-order_crud = OrderCRUD(r)
-trade_curd = TradeCRUD(r)
+# r = Redis(host=env_settings.redis_host, password=env_settings.redis_password)
+# r_async = ARedis(host=env_settings.redis_host, password=env_settings.redis_password)
+# connection = pika.BlockingConnection(
+#     pika.ConnectionParameters(
+#         "localhost",
+#     )
+# )
+
+# channel = connection.channel()
+connection = pika.BlockingConnection(
+    pika.ConnectionParameters(
+        "localhost",
+    )
+)
+
+
+sync_channel = connection.channel()
+order_crud = OrderCRUD(rabbit_channel=sync_channel)
+
+
+# async_connection = await connect(host="localhost")
+async def get_connection():
+    return await connect_robust()
+
+
+async_rabbit_pool = Pool(
+    constructor=get_connection,
+    max_size=5,  # Adjust pool size based on your needs
+)
+async def get_channel():
+    async with async_rabbit_pool.acquire() as connection:
+        return await connection.channel()
+
+async_channel_pool: Pool = Pool(get_channel, max_size=10)
+
 
 
 @app.post("/order", response_model=SuccessResponse)
@@ -58,34 +94,34 @@ async def process_order(order: OrderPending):
     )
 
 
-@app.put("/order", response_model=SuccessResponse)
-async def update_order(order: UpdateOrder, order_id: UUID4):
-    [status, data] = order_crud.update(
-        str(order_id), order.updated_price, order.updated_quantity
-    )
-    if status:
-        return SuccessResponse(data=None)
-    if data and data.startswith("INTERNAL"):
-        return JSONResponse(
-            status_code=500, content=ErrorResponse(message=data).model_dump()
-        )
-    return JSONResponse(
-        status_code=400, content=FailResponse(data={"message": data}).model_dump()
-    )
+# @app.put("/order", response_model=SuccessResponse)
+# async def update_order(order: UpdateOrder, order_id: UUID4):
+#     [status, data] = order_crud.update(
+#         str(order_id), order.updated_price, order.updated_quantity
+#     )
+#     if status:
+#         return SuccessResponse(data=None)
+#     if data and data.startswith("INTERNAL"):
+#         return JSONResponse(
+#             status_code=500, content=ErrorResponse(message=data).model_dump()
+#         )
+#     return JSONResponse(
+#         status_code=400, content=FailResponse(data={"message": data}).model_dump()
+#     )
 
 
-@app.delete("/order", response_model=SuccessResponse)
-async def delete_order(order_id: UUID4):
-    [status, data] = order_crud.delete(str(order_id))
-    if status:
-        return SuccessResponse(data=None)
-    if data and data.startswith("INTERNAL"):
-        return JSONResponse(
-            status_code=500, content=ErrorResponse(message=data).model_dump()
-        )
-    return JSONResponse(
-        status_code=400, content=FailResponse(data={"message": data}).model_dump()
-    )
+# @app.delete("/order", response_model=SuccessResponse)
+# async def delete_order(order_id: UUID4):
+#     [status, data] = order_crud.delete(str(order_id))
+#     if status:
+#         return SuccessResponse(data=None)
+#     if data and data.startswith("INTERNAL"):
+#         return JSONResponse(
+#             status_code=500, content=ErrorResponse(message=data).model_dump()
+#         )
+#     return JSONResponse(
+#         status_code=400, content=FailResponse(data={"message": data}).model_dump()
+#     )
 
 
 @app.get("/order", response_model=SingleOrderResponse)
@@ -115,18 +151,31 @@ async def get_all_orders(pagination: LimitAndOffset = Depends()):
     )
 
 
+# channel.exchange_declare(exchange=env_settings.bid_ask_exchange, exchange_type='fanout', durable=True)
+
+
+
 @app.websocket("/depth")
 async def get_all_trades(ws: WebSocket):
+    async def send_to_ws(message):
+        async with message.process():
+            await ws.send_json(json.loads(message.body.decode()))
+            print("SEEEEEEEEEEEEEEEEENT")
+
     try:
         await ws.accept()
-        while True:
-            await ws.send_json(
-                {
-                    "buy": order_crud.calculate_depth_buy(5)[1],
-                    "sell": order_crud.calculate_depth_sell(5)[1],
-                }
+        # with async_rabbit_pool.acquire() as connection:
+            # channel = await connection
+        print("TRYING TO DO STUFF")
+        async with async_channel_pool.acquire() as channel:
+            print("ACCEPTED")
+            bid_ask_exchange = await channel.declare_exchange(
+                "bid_ask", ExchangeType.FANOUT, durable=True
             )
-            await sleep(env_settings.opi_bid_ask_spread_stream_interval)
+            queue = await channel.declare_queue(exclusive=True)
+            await queue.bind(bid_ask_exchange)
+            await queue.consume(send_to_ws)
+            await asyncio.Future()
     except WebSocketDisconnect as e:
         print("WS disconnect: get all trades, ", str(e))
     except WebSocketException as e:
@@ -159,8 +208,3 @@ async def get_all_trades(ws: WebSocket):
     except Exception as e:
         print("/trade update exception ", str(e))
 
-# THIS IS ADDED FOR CONVENIENCE AND QUICK TESTING
-@app.get("/flush-database")
-async def flush_database():
-    await r_async.flushdb()
-    return SuccessResponse(data=None)

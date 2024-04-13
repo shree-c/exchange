@@ -1,103 +1,87 @@
-from crud import OrderCRUD, TradeCRUD
-from datetime import datetime
-from time import sleep
-from redis import Redis
+from multiprocessing import Process, Manager, Lock
+from om.bid_ask_spread_broadcast import broadcast_bid_ask, broadcast_trades
+from multiprocessing.managers import SyncManager
 from om.env import env_settings
+from queue import PriorityQueue
+from om.accumulator import accumulator
+from om.match_engine import match_engine
+from collections import deque
+import pika
 
-r = Redis(host=env_settings.redis_host, password=env_settings.redis_password)
-order_crud = OrderCRUD(r)
-trade_crud = TradeCRUD(r)
+connection = pika.BlockingConnection(
+    pika.ConnectionParameters(
+        "localhost",
+    )
+)
+channel = connection.channel()
+channel.exchange_declare(
+    exchange=env_settings.trade_updates_exchange_name,
+    exchange_type='fanout',
+    durable=True
+)
 
-last_buy_id = ""
-last_sell_id = ""
-while True:
-    order_crud.wait_for_changes()
-    # order is popped before it is inspected avoid race condition (updates, cancellations)
-    [status, top_buy_data] = order_crud.pop_top_buy()
-    if not status:
-        print("No buys available...")
-        continue
-    top_buy_id = top_buy_data[0]
-    [status, top_sell_data] = order_crud.pop_top_sell()
-    if not status:
-        # push buy back
-        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
-        print("No sells available")
-        continue
-    top_sell_id = top_sell_data[0]
-    [buy_status, buy_order] = order_crud.get(top_buy_id)
-    if not buy_status:
-        print(
-            f"Couldn't get buy order details:{top_buy_id} ",
-            "This should not have happened.",
-        )
-        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
-        order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
-        continue
-    [sell_status, sell_order] = order_crud.get(top_sell_id)
-    if not sell_status:
-        print(
-            f"Couldn't get sell order details:{top_sell_id} ",
-            "This should not have happened.",
-        )
-        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
-        continue
+channel.exchange_declare(
+    exchange=env_settings.bid_ask_exchange,
+    exchange_type='fanout',
+    durable=True
+)
+# BID_ASK_QUEUE_CHANNEL_KEY = "bid_ask"
+# TRADE_UPDATES_CHANNEL_KEY = "trade_updates"
+# STATE_CHANGE_CHANNEL_KEY = "order_book_state_changes"
+# ACCUMULATOR_CHANNEL_KEY = "accumulator"
+DEPTH = 5
 
-    if buy_order["price"] >= sell_order["price"]:
-        total_buy_quantity = buy_order["quantity"] - buy_order["punched"]
-        total_sell_quantity = sell_order["quantity"] - sell_order["punched"]
-        if total_buy_quantity == 0:
-            print(f"Zero quantity order dangling in OM queue: {top_buy_id}")
-            continue
-            
-        if total_sell_quantity == 0:
-            print(f"Zero quantity order dangling in OM queue: {top_sell_id}")
-            continue
+# channel.queue_declare(queue=env_settings.bid_ask_exchange, durable=False)
+channel.queue_declare(queue=env_settings.trade_updates_exchange_name, durable=True)
+channel.queue_declare(queue=env_settings.state_change_queue_key, durable=True)
+channel.queue_declare(queue=env_settings.accumulator_queue_key, durable=True)
 
-        punched = min([total_buy_quantity, total_sell_quantity])
-        buy_remaining = total_buy_quantity - punched
-        sell_remaining = total_sell_quantity - punched
 
-        # earliest order is given priority thus it's price is chosen
-        price = (
-            buy_order["price"]
-            if buy_order["timestamp"] > sell_order["timestamp"]
-            else sell_order["price"]
-        )
-        trade_order = {
-            "timestamp": datetime.now().timestamp(),
-            "buy_order_id": top_buy_id,
-            "sell_order_id": top_sell_id,
-            "quantity": punched,
-            "price": price,
-        }
-        if punched > 0:
-            order_crud.update_punched(top_buy_id, punched + buy_order["punched"])
-            order_crud.update_punched(top_sell_id, punched + sell_order["punched"])
-            trade_crud.create_trade(trade_order)
+class MyManager(SyncManager):
+    pass
 
-        # push back is the order still has quantity left
-        has_been_added_back = False
-        if buy_remaining != 0:
-            [status, data] = order_crud.push_to_buy_match_queue(
-                top_buy_id, top_buy_data[1]
-            )
-            if not status:
-                print(f"couldn't push {top_buy_id} to order match queue")
-            else:
-                has_been_added_back = True
-        if sell_remaining != 0:
-            [status, data] = order_crud.push_to_sell_match_queue(
-                top_sell_id, top_sell_data[1]
-            )
-            if not status:
-                print(f"couldn't push {top_sell_id} to order match queue")
-            else:
-                has_been_added_back = True
-        if has_been_added_back:
-            order_crud.notify_new_state()
-    else:
-        # pushing it back
-        order_crud.push_to_sell_match_queue(top_sell_data[0], top_sell_data[1])
-        order_crud.push_to_buy_match_queue(top_buy_data[0], top_buy_data[1])
-    print("next loop...")
+
+MyManager.register("priority_queue", PriorityQueue)
+MyManager.register("set", set)
+MyManager.register("deque", deque)
+with MyManager() as manager:
+    shared_memory = {
+        "order_book": manager.dict(),
+        "price_table_buy": manager.dict(),
+        "price_table_sell": manager.dict(),
+        "price_priority_queue_buy": manager.priority_queue(),
+        "price_priority_queue_sell": manager.priority_queue(),
+        "price_active_set_buy": manager.set(),
+        "price_active_set_sell": manager.set(),
+    }
+    trade_publish_queue = manager.Queue(maxsize=-1)
+    mutation_lock = Lock()
+    accumulator_p = Process(
+        target=accumulator,
+        args=(shared_memory, manager, mutation_lock),
+    )
+    matching_engine = Process(
+        target=match_engine,
+        args=(shared_memory, mutation_lock, trade_publish_queue),
+    )
+    bid_ask_broadcaster = Process(
+        target=broadcast_bid_ask,
+        args=(
+            shared_memory["price_table_buy"],
+            shared_memory["price_table_sell"],
+            DEPTH,
+        ),
+    )
+
+    trade_broadcaster = Process(
+        target=broadcast_trades,
+        args=(trade_publish_queue,),
+    )
+    accumulator_p.start()
+    matching_engine.start()
+    bid_ask_broadcaster.start()
+    trade_broadcaster.start()
+    accumulator_p.join()
+    matching_engine.join()
+    bid_ask_broadcaster.join()
+    trade_broadcaster.join()

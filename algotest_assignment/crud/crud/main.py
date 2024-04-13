@@ -1,8 +1,10 @@
 from datetime import datetime
+import pika.channel
 from redis import Redis
 import sqlite3
 from datetime import datetime
 from crud.env import env_settings
+import pika
 import json
 import uuid
 
@@ -98,294 +100,132 @@ class TradeCRUD:
 
 class OrderCRUD:
     SCALE_FACTOR = 1e8
-    def __init__(self, r: Redis) -> None:
-        print(env_settings.state_change_log_db)
-        self.log_db_con = sqlite3.connect(env_settings.state_change_log_db)
-        self.log_db_cursor = self.log_db_con.cursor()
-        self.log_db_cursor.execute(
+
+    def __init__(self, rabbit_channel: pika.channel.Channel) -> None:
+        self.persistent_db_con: sqlite3.Connection = sqlite3.connect(
+            env_settings.state_change_log_db
+        )
+        self.persistent_db_cursor: sqlite3.Cursor = self.persistent_db_con.cursor()
+        self.persistent_db_cursor.execute(
             "CREATE TABLE IF NOT EXISTS STATE_CHANGES (message_id INTEGER PRIMARY KEY, order_id TEXT, order_data TEXT)"
         )
-        self.log_db_con.commit()
-        self.r = r
+        self.persistent_db_cursor.execute(
+            "CREATE TABLE IF NOT EXISTS ORDER_BOOK (order_id TEXT PRIMARY KEY, side INTEGER, price FLOAT, timestamp FLOAT, punched INTEGER, quantity INTEGER, cancelled BOOL)"
+        )
+        self.persistent_db_con.commit()
+        self.channel = rabbit_channel
         pass
 
-    def redis_order_book_key():
-        return f"{env_settings.crud_order_book_prefix}{datetime.now().strftime('%Y-%m-%d')}"
-
-    def redis_order_matching_queue_key(side):
-        if side == 1:
-            return f"{env_settings.crud_order_match_queue_prefix}_buys_{datetime.now().strftime('%Y_%m_%d')}"
-        return f"{env_settings.crud_order_match_queue_prefix}_sells_{datetime.now().strftime('%Y_%m_%d')}"
-
-    def redis_order_list_passive_key():
-        return f"{env_settings.crud_order_id_list_prefix}_{datetime.now().strftime('%Y_%m_%d')}"
-
-    def split_order_value(order_string):
-        [timestamp, side, quantity, price, punched, cancelled] = order_string.split("|")
-        return {
-            "timestamp": float(timestamp),
-            "side": int(side),
-            "quantity": int(quantity),
-            "price": float(price),
-            "punched": int(punched),
-            "cancelled": int(cancelled),
-        }
-
-    def make_order_book_value_string(order):
-        x =  f"{order['timestamp']}|{order['side']}|{order['quantity']}|{order['price']}|{order['punched']}|{order['cancelled']}"
-        print(type(x), x)
-        return x
-
-
-    def get_score(price, timestamp, side):
-        price_scaled = price * OrderCRUD.SCALE_FACTOR
-        if side == 1:
-            score = (price_scaled - (round(timestamp))) * -1
-        else:
-            score = (price_scaled + (round(timestamp)))
-        return score
+    @dow
+    def update_punched(self, order_id, punched_quantity, timestamp):
+        try:
+            self.persistent_db_cursor.execute(
+                f"UPDATE ORDER_BOOK SET punched = punched + {punched_quantity}, timestamp = {timestamp} where order_id = '{order_id}'"
+            )
+            self.persistent_db_con.commit()
+        except Exception as e:
+            print("UPDATE PUNCHED !!! EEEEEEEEEEEEEEEEERROR")
+            print(e)
 
     @dow
-    def set_order_book(self, order_id, order_data):
-        # message_id = self.r.get(env_settings.last_message_id)
-        print(order_id, order_data)
-        cursor = self.log_db_cursor.execute(
-            f"INSERT INTO STATE_CHANGES (order_id, order_data) values('{str(order_id)}', '{order_data}')"
+    def update_order(self, order_id, price, timestamp, cancelled):
+        self.persistent_db_cursor.execute(
+            f"UPDATE ORDER_BOOK SET price = {price}, timestamp = {timestamp}, cancelled={cancelled} where  order_id = '{order_id}'"
         )
-        self.log_db_con.commit()
-        self.r.set(env_settings.last_message_id, cursor.lastrowid)
-        self.r.hset(
-            OrderCRUD.redis_order_book_key(),
-            str(order_id),
-            order_data
+        self.persistent_db_con.commit()
+        return [True, None]
+
+    @dow
+    def save_order(self, order):
+        try:
+            self.persistent_db_cursor.execute(
+                f"INSERT INTO ORDER_BOOK (order_id, side, price, timestamp, punched, quantity, cancelled) values('{order['order_id']}', {order['side']}, {order['price']}, {order['timestamp']}, {order['punched']}, {order['quantity']}, {order['cancelled']})"
+            )
+            self.persistent_db_con.commit()
+        except Exception as e:
+            print(e)
+
+    @dow
+    def log_state_change(self, change):
+        cursor = self.persistent_db_cursor.execute(
+            f"INSERT INTO STATE_CHANGES (order_id, order_data) values('{str(change['order_id'])}', '{json.dumps(change)}')"
         )
+        self.persistent_db_con.commit()
         return [True, cursor.lastrowid]
- 
+
     @dow
     def create(self, order):
-        order_id = str(uuid.uuid4())
-        timestamp = datetime.now().timestamp()
-        order["timestamp"] = timestamp
-        order["order_id"] = order_id
-        order["punched"] = 0
-        order["cancelled"] = 0
-        # into order book
-        order_string = OrderCRUD.make_order_book_value_string(order)
-        print(order_string, type(order_string))
-        self.set_order_book(order_id, order_string)
-        score = OrderCRUD.get_score(order["price"], order["timestamp"], order["side"])
-        # into
-        res = self.r.zadd(
-            OrderCRUD.redis_order_matching_queue_key(order["side"]),
-            {str(order_id): score},
+        order["action"] = "create"
+        order["order_id"] = str(uuid.uuid4())
+        self.channel.basic_publish(
+            exchange="",
+            routing_key=env_settings.accumulator_queue_key,
+            body=json.dumps(order),
+            properties=pika.BasicProperties(delivery_mode=pika.DeliveryMode.Persistent),
         )
-        if res == 0:
-            return [False, "Couldn't add to order match queue"]
-        self.notify_new_state()
-        # for maintaining list of order ids by timestamp
-        # right to left: new to old
-        self.r.rpush(OrderCRUD.redis_order_list_passive_key(), str(order_id))
-        return [True, order_id]
+        return [True, order["order_id"]]
 
     @dow
-    def pop_top_buy(self):
-        res = self.r.zpopmin(OrderCRUD.redis_order_matching_queue_key(1))
-        if len(res) == 0:
-            return [False, "No buys available"]
-        return [True, (res[0][0].decode(), res[0][1])]
-
-    @dow
-    def pop_top_sell(self):
-        res = self.r.zpopmin(OrderCRUD.redis_order_matching_queue_key(-1))
-        if len(res) == 0:
-            return [False, "No sells available"]
-        return [True, (res[0][0].decode(), res[0][1])]
-
-    @dow
-    def push_to_sell_match_queue(self, order_id, score):
-        res = self.r.zadd(
-            OrderCRUD.redis_order_matching_queue_key(-1), {order_id: score}
+    def update(self, order_id, price):
+        self.channel.basic_publish(
+            exchange="",
+            routing_key=env_settings.accumulator_queue_key,
+            body=json.dumps({"action": "update", "order_id": order_id, "price": price}),
+            properties=pika.BasicProperties(delivery_mode=pika.DeliveryMode.Persistent),
         )
-        if res == 1:
-            return [True, None]
-        return [False, "Couldn't push to sell match queue"]
-
-    @dow
-    def push_to_buy_match_queue(self, order_id, score):
-        res = self.r.zadd(
-            OrderCRUD.redis_order_matching_queue_key(1), {order_id: score}
-        )
-        if res == 1:
-            return [True, None]
-        return [False, "Couldn't push to buy match queue"]
-
-    @dow
-    def update_punched(self, order_id, punched):
-        [status, data] = self.get(order_id)
-        if status:
-            data["punched"] = punched
-            self.r.hset(
-                OrderCRUD.redis_order_book_key(),
-                order_id,
-                OrderCRUD.make_order_book_value_string(data),
-            )
-            return [True, None]
-        return [False, data]
-    
-    def notify_new_state(self):
-        self.r.lpush(env_settings.om_new_state_notify_key, '0')
-    
-    def wait_for_changes(self):
-        self.r.brpop(env_settings.om_new_state_notify_key)
-
-    # To handle race conditions for delete(cancel) and update.
-    # If the order is updatable:
-    #     Remove from order match list
-    #     Update the order
-    @dow
-    def update(self, order_id, updated_price, updated_quantity):
-        order_string = self.r.hget(OrderCRUD.redis_order_book_key(), str(order_id))
-        if not order_string:
-            return [False, "Order not found"]
-        existing_order = OrderCRUD.split_order_value(order_string.decode())
-        if existing_order["cancelled"] == 1:
-            return [False, "Order already cancelled"]
-        if existing_order["punched"] != 0:
-            if existing_order["punched"] != existing_order["quantity"]:
-                return [False, "Order is pending, you can't modify it"]
-            else:
-                return [False, "Order is filled, you can't modify it"]
-
-        # popping from order match list
-        res = self.r.zrem(
-            OrderCRUD.redis_order_matching_queue_key(int(existing_order["side"])),
-            str(order_id),
-        )
-        # if it's not in match list it's considered as being processed, it would be either in order process queue or match list
-        if res == 0:
-            return [False, "Order is being processed"]
-        existing_order["price"] = updated_price
-        existing_order["quantity"] = updated_quantity
-        # updating order book
-
-        order_string = OrderCRUD.make_order_book_value_string(existing_order)
-        self.set_order_book(order_id, order_string)
-        # self.r.hset(
-        #     OrderCRUD.redis_order_book_key(),
-        #     str(order_id),
-        #     OrderCRUD.make_order_book_value_string(existing_order),
-        # )
-        # pushing it back
-        self.push_to_om_queue(str(order_id))
-        self.notify_new_state()
         return [True, None]
 
     @dow
     def delete(self, order_id):
-        [status, order] = self.get(order_id)
-        if not status:
-            return [False, "Order not found"]
-        if order["cancelled"] == 1:
-            return [False, "Order already cancelled"]
-        if order["punched"] != 0:
-            return [False, "Order is pending, you can't modify it"]
-        # popping from order match list
-        res = self.r.zrem(
-            OrderCRUD.redis_order_matching_queue_key(int(order["side"])),
-            str(order_id),
+        self.channel.basic_publish(
+            exchange="",
+            routing_key=env_settings.accumulator_queue_key,
+            body=json.dumps(
+                {
+                    "action": "update",
+                    "order_id": order_id,
+                }
+            ),
+            properties=pika.BasicProperties(delivery_mode=pika.DeliveryMode.Persistent),
         )
-        # if it's not in match list it's considered as being processed, it would be either in order process queue or match list
-        if res == 0:
-            self.push_to_om_queue(str(order_id))
-            return [False, "Order is being processed"]
-        order["cancelled"] = 1
-        order_string = OrderCRUD.make_order_book_value_string(order)
-        self.set_order_book(order_id, order_string)
-        self.notify_new_state()
-        # not pushing it back
         return [True, None]
 
     @dow
     def get(self, order_id):
-        order_value = self.r.hget(OrderCRUD.redis_order_book_key(), order_id)
-        if order_value:
-            return [True, OrderCRUD.split_order_value(order_value.decode())]
-        return [False, "Order doesn't exist"]
+        result = self.persistent_db_cursor.execute(
+            f"SELECT * FROM ORDER_BOOK WHERE order_id = {order_id}"
+        )
+        print(result)
+        return [True, result]
+
+    def serialize_order_tuple(o_tuple):
+        order = dict(
+            zip(
+                [
+                    "order_id",
+                    "side",
+                    "price",
+                    "timestamp",
+                    "punched",
+                    "quantity",
+                    "cancelled",
+                ],
+                o_tuple,
+            )
+        )
+        return order
 
     @dow
     def get_all(self, limit, offset):
-        # get all orders
-        order_ids = self.r.lrange(
-            OrderCRUD.redis_order_list_passive_key(), offset, offset + limit - 1
-        )
-        if len(order_ids) == 0:
-            return [True, []]
-        return self.get_these_orders(order_ids)
-
-    @dow
-    def get_these_orders(self, order_ids):
-        orders = []
-        order_book_value_strings = self.r.hmget(
-            OrderCRUD.redis_order_book_key(), order_ids
-        )
-        for index, order_id in enumerate(order_ids):
-            if order_book_value_strings[index]:
-                orders.append(
-                    {
-                        "order_id": order_id,
-                        **OrderCRUD.split_order_value(
-                            order_book_value_strings[index].decode()
-                        ),
-                    }
-                )
-        return [
-            True,
-            orders,
-        ]
-
-    @dow
-    def push_to_om_queue(self, order_id):
-        [status, data] = self.get(order_id)
-        if not status:
-            return [status, data]
-        score = OrderCRUD.get_score(data["price"], data["timestamp"], data["side"])
-        res = self.r.zadd(
-            OrderCRUD.redis_order_matching_queue_key(data["side"]),
-            {order_id: score},
-        )
-        if res == 0:
-            return [False, "Couldn't add order_id"]
-        return [True, None]
-
-    @dow
-    def calculate_depth(self, depth, key):
-        price_quantity = {}
-        index = 0
-        while True:
-            card = self.r.zcard(key)
-            # index is greater than cardinality
-            if card == index or card == 0:
-                break
-            order_id = self.r.zrange(key, index, index)[0]
-            [status, data] = self.get(order_id.decode())
-            if not status:
-                continue
-            if data:
-                price = data["price"]
-                if len(price_quantity) == depth and str(price) not in price_quantity:
-                    break
-                quantity = data["quantity"] - data["punched"]
-                if str(price) not in price_quantity:
-                    price_quantity[str(price)] = quantity
-                else:
-                    price_quantity[str(price)] += quantity
-                index += 1
-        return [True, price_quantity]
-
-    @dow
-    def calculate_depth_buy(self, depth):
-        return self.calculate_depth(depth, OrderCRUD.redis_order_matching_queue_key(1))
-
-    @dow
-    def calculate_depth_sell(self, depth):
-        return self.calculate_depth(depth, OrderCRUD.redis_order_matching_queue_key(-1))
+        try:
+            result = self.persistent_db_cursor.execute(
+                f"SELECT * FROM ORDER_BOOK LIMIT {limit} OFFSET {offset}"
+            ).fetchall()
+            orders = [
+                OrderCRUD.serialize_order_tuple(order_tuple) for order_tuple in result
+            ]
+            print(orders)
+            return [True, orders]
+        except Exception as e:
+            print("GETALL!!!")
+            print(e)

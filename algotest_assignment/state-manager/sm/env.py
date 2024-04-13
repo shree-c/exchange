@@ -14,6 +14,4 @@ class Settings(BaseSettings):
   mutations_exchange_name:str = "mutations"
   mutation_persistent_queue_key:str = "mutations_persistent"
 
-
-
 env_settings = Settings()
