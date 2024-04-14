@@ -136,92 +136,94 @@ async def get_all_orders(pagination: LimitAndOffset = Depends()):
 
 @app.websocket("/depth")
 async def get_all_trades(ws: WebSocket):
-    async def send_to_ws(message):
-        async with message.process():
+    await ws.accept()
+    async with async_channel_pool.acquire() as channel:
+        bid_ask_exchange = await channel.declare_exchange(
+            "bid_ask", ExchangeType.FANOUT, durable=True
+        )
+        queue = await channel.declare_queue(exclusive=True)
+        async def send_to_ws(message):
             if ws.client_state == 2:
                 loop = asyncio.get_running_loop()
                 print("CLOSING...")
-                loop.close()
-            await ws.send_json(json.loads(message.body.decode()))
-
-    try:
-        await ws.accept()
-        print("TRYING TO DO STUFF")
-        async with async_channel_pool.acquire() as channel:
-            print("ACCEPTED")
-            bid_ask_exchange = await channel.declare_exchange(
-                "bid_ask", ExchangeType.FANOUT, durable=True
-            )
-            queue = await channel.declare_queue(exclusive=True)
+                await queue.delete()
+                await loop.close()
+            else:
+                try:
+                    await ws.send_json(json.loads(message.body.decode()))
+                except:
+                    await queue.unbind(bid_ask_exchange)
+                    print("Trying to close stuff")
+        consumer_tag = None
+        try:
+            consumer_tag = await queue.consume(send_to_ws, no_ack=True)
             await queue.bind(bid_ask_exchange)
-            await queue.consume(send_to_ws)
             await asyncio.Future()
-    except WebSocketDisconnect as e:
-        print("WS disconnect: get all trades, ", str(e))
-    except WebSocketException as e:
-        print("WS Exception: get all trades, ", str(e))
-    except Exception as e:
-        print("/depth exception ", str(e))
-
+        except Exception as e:
+            print(traceback.format_exc())
+            print(e)
+        finally:
+            await queue.delete(consumer_tag)
 
 @app.websocket("/trade-update")
 async def get_all_trades(ws: WebSocket):
-    try:
-
+    await ws.accept()
+    async with async_channel_pool.acquire() as channel:
+        bid_ask_exchange = await channel.declare_exchange(
+            env_settings.trade_updates_exchange_name, ExchangeType.FANOUT, durable=True
+        )
+        queue = await channel.declare_queue(exclusive=True)
         async def send_to_ws(message):
             if ws.client_state == 2:
                 loop = asyncio.get_running_loop()
                 print("CLOSING...")
-                loop.close()
-            async with message.process():
-                await ws.send_json(json.loads(message.body.decode()))
-
-        await ws.accept()
-        print("TRYING TO DO STUFF")
-        async with async_channel_pool.acquire() as channel:
-            trade_updates = await channel.declare_exchange(
-                env_settings.trade_updates_exchange_name,
-                ExchangeType.FANOUT,
-                durable=True,
-            )
-            queue = await channel.declare_queue(exclusive=True)
-            await queue.bind(trade_updates)
-            await queue.consume(send_to_ws)
+                await queue.delete()
+                await loop.close()
+            else:
+                try:
+                    await ws.send_json(json.loads(message.body.decode()))
+                except:
+                    await queue.unbind(bid_ask_exchange)
+                    print("Trying to close stuff")
+        consumer_tag = None
+        try:
+            consumer_tag = await queue.consume(send_to_ws, no_ack=True)
+            await queue.bind(bid_ask_exchange)
             await asyncio.Future()
-    except WebSocketDisconnect as e:
-        print("WS disconnect: trade update, ", str(e))
-    except WebSocketException as e:
-        print("WS Exception: trade update, ", str(e))
-    except Exception as e:
-        print("/trade update exception ", str(e))
+        except Exception as e:
+            print(traceback.format_exc())
+            print(e)
+        finally:
+            await queue.delete(consumer_tag)
 
 
 @app.websocket("/mutation-updates")
-async def mutation_update(ws: WebSocket):
-    try:
+async def get_all_trades(ws: WebSocket):
+    await ws.accept()
+    async with async_channel_pool.acquire() as channel:
+        bid_ask_exchange = await channel.declare_exchange(
+            env_settings.mutations_exchange_name, ExchangeType.FANOUT, durable=True
+        )
+        queue = await channel.declare_queue(exclusive=True)
         async def send_to_ws(message):
             if ws.client_state == 2:
                 loop = asyncio.get_running_loop()
                 print("CLOSING...")
-                loop.close()
-            async with message.process():
-                await ws.send_json(json.loads(message.body.decode()))
-
-        await ws.accept()
-        async with async_channel_pool.acquire() as channel:
-            mutation_updates = await channel.declare_exchange(
-                env_settings.mutations_exchange_name, ExchangeType.FANOUT, durable=True
-            )
-            queue = await channel.declare_queue(exclusive=True)
-            await queue.bind(mutation_updates)
-            await queue.consume(send_to_ws)
+                await queue.delete()
+                await loop.close()
+            else:
+                try:
+                    await ws.send_json(json.loads(message.body.decode()))
+                except:
+                    await queue.unbind(bid_ask_exchange)
+                    print("Trying to close stuff")
+        consumer_tag = None
+        try:
+            consumer_tag = await queue.consume(send_to_ws, no_ack=True)
+            await queue.bind(bid_ask_exchange)
             await asyncio.Future()
-    except WebSocketDisconnect as e:
-        print(
-            "WS disconnect: trade update", str(e)
-        )
-    except WebSocketException as e:
-        print("WS Exception: trade update", str(e))
-    except Exception as e:
-        print(traceback.format_exc())        
-        print("/trade update exception", str(e))
+        except Exception as e:
+            print(traceback.format_exc())
+            print(e)
+        finally:
+            await queue.delete(consumer_tag)

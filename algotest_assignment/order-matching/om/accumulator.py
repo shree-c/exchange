@@ -1,21 +1,9 @@
-from uuid import uuid4
 from om.env import env_settings
 from datetime import datetime
 import json
-from random import randint
 import pika
 from om.utils.priority_queue import PQManager
 import traceback
-
-
-def get_random_order():
-    return {
-        "order_id": str(uuid4()),
-        "quantity": randint(200, 250),
-        "timestamp": datetime.now().timestamp(),
-        "cancelled": False,
-        "pending": 0,
-    }
 
 
 def create_order(body, order_book, manager):

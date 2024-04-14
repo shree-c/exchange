@@ -3,6 +3,7 @@ from om.utils.priority_queue import PQManager
 
 
 def match_engine(shared_memory, mutation_lock, trade_publish_queue):
+    # manage unique priority queue (combination of python set and priority queue)
     buy_pq = PQManager(
         shared_memory["price_active_set_buy"],
         shared_memory["price_priority_queue_buy"],
@@ -16,12 +17,12 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
         1,
     )
     while True:
-        print("BUYQ", buy_pq.pq.qsize(), buy_pq.unique_set._getvalue(), flush=True)
-        print("SELLQ", sell_pq.pq.qsize(), sell_pq.unique_set._getvalue(), flush=True)
+        # blocking get
         top_buy_price = buy_pq.get()
         print("GOT BUY")
         print(top_buy_price)
         print("WAITING FOR SELL")
+        # blocking get
         top_sell_price = sell_pq.get()
         print("TOP BUY", top_buy_price, "TOP SELL ", top_sell_price, flush=True)
         print("GOT SELL", flush=True)
@@ -33,6 +34,7 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                 shared_memory["price_table_buy"][top_buy_price]._getvalue()
             )
             print(buy_queue_len, sell_queue_len)
+            # while there are items in price table row
             with mutation_lock:
                 while (
                     len(shared_memory["price_table_buy"][top_buy_price]._getvalue())
@@ -43,6 +45,7 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                     != 0
                 ):
                     print("loop...")
+                    # INSPECT items for cancellation and changes (if price doesn't match current row then the item has been changed)
                     buy_item = shared_memory["price_table_buy"][
                         top_buy_price
                     ]._getvalue()[0]
@@ -57,14 +60,13 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                         )
                         shared_memory["price_table_sell"][top_sell_price].popleft()
                         continue
-
                     execution_quantity = min(
                         buy_item["quantity"] - buy_item["punched"],
                         sell_item["quantity"] - sell_item["punched"],
                     )
                     buy_item["punched"] += execution_quantity
                     sell_item["punched"] += execution_quantity
-
+                    # publish
                     trade_publish_queue.put(
                         {
                             "buy_order_id": buy_item["order_id"],
@@ -84,11 +86,15 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                     if sell_item["punched"] == sell_item["quantity"]:
                         print("Completely filled, SELL ", sell_item["order_id"])
                         shared_memory["price_table_sell"][top_sell_price].popleft()
+                    # check if chosen top_buy_price is current top buy price
                     if buy_pq.last_added_price.value > top_buy_price:
                         break
+                    # check if chosen top_sell_price is current top sell price
                     if sell_pq.last_added_price.value < top_sell_price:
                         break
                     print("END...", flush=True)
+                
+                # if buy or sell row is not completely empty add prices back to priority queue
                 if (
                     len(shared_memory["price_table_sell"][top_sell_price]._getvalue())
                     != 0
@@ -100,5 +106,6 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                 ):
                     buy_pq.put(top_buy_price)
         else:
+            # they don't match put them back
             buy_pq.put(top_buy_price)
             sell_pq.put(top_sell_price)

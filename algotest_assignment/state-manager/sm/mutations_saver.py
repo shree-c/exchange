@@ -23,9 +23,7 @@ def save_mutations():
         )
 
         def cb(ch, method, props, body):
-            # order_crud.save_order(body.decode())
             body_parsed = json.loads(body.decode())
-            # try to update order based on punched trades
             if "action" in body_parsed:
                 if body_parsed["action"] == "trade":
                     order_crud.update_punched(
@@ -55,7 +53,7 @@ def save_mutations():
                         order_crud.update_order(body['data']['order_id'], body['data']['price'], body['data']['timestamp'], True)
                         print("CANCELLED ORDER")
                     else:
-                        print("FUCK")
+                        print("THIS SHOULD NOT HAV BEEN HAPPENED", body_parsed)
                 else:
                     print(body_parsed)
             ch.basic_ack(delivery_tag=method.delivery_tag)

@@ -2,11 +2,6 @@ from pydantic_settings import BaseSettings
 from pydantic import PositiveFloat
 
 class Settings(BaseSettings):
-  order_matching_interval: PositiveFloat = 0.3
-  redis_host: str = "localhost"
-  redis_password: str = ""
-  om_new_state_notify_key:str = "om_new_state"
-  
   accumulator_queue_key:str = "accumulator"
   bid_ask_exchange: str = "bid_ask"
   trade_updates_exchange_name: str = "trade_update_exchange"

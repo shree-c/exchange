@@ -166,8 +166,8 @@ async function cancelOrder(order_id: string) {
     })
     if (data.status === 'success') {
       toast.add({
-        severity: 'success',
-        summary: `order ${order_id} deleted.`,
+        severity: 'secondary',
+        summary: `Cancel requested for ${order_id}.`,
         life: 3000
       })
       await fetchOrders()
@@ -181,7 +181,7 @@ async function flushDb() {
     if (data.status === 'success') {
       await fetchOrders()
       toast.add({
-        severity: 'success',
+        severity: 'secondary',
         summary: 'Database flush successful.',
         life: 3000
       })
@@ -205,8 +205,8 @@ async function updateOrder(updated_quantity: number, updated_price: number, orde
     )
     if (data.status === 'success') {
       toast.add({
-        severity: 'success',
-        summary: 'Updated for ' + order_id,
+        severity: 'secondary',
+        summary: 'Updated requested ' + order_id,
         life: 3000
       })
       return true

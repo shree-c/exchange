@@ -96,4 +96,10 @@ __COMPLEXITY__
 * Provides ability to punch, update and cancel orders; listen to bid ask spread, and trade and order-change updates; view order book.
 
 
+# BUGS
+
+* There is bug with fastapi websocket connection which freezes frontend streams on reloads
+* It is related to aio_pika (rabbitmq client) and handling connections, I am working on it
+
+
 

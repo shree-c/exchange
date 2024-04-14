@@ -1,4 +1,4 @@
-from pydantic import BaseModel, PositiveInt, PositiveFloat, UUID4, Field
+from pydantic import BaseModel, PositiveInt, PositiveFloat, Field
 from typing import Literal, Any, List
 
 
