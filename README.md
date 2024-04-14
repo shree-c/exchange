@@ -3,6 +3,13 @@
 ## How to build and run app?
 
 * Download the repository and cd into the folder. Make sure docker is installed in your system and docker daemon is running.
+
+* Start rabbitmq docker container
+```
+docker run -d --hostname rabbitmq --name my-rabbit -p 5672:5672 -p 15672:15672 --network algotest rabbitmq:management
+```
+
+* Make sure rabbitmq is up. Check at http://localhost:15672
 ```
 docker compose build
 ```
@@ -23,51 +30,70 @@ docker compose up
 
 ![](/diagram.png)
 
-* The app has two microservices **order punching interface** and **order matching engine**.
-* Redis is used for storing orders, trades and order match queues.
+
+* Rabbit mq is used for messaging
+
+### Exchanges
+* TRADE UPDATE
+  * Executed trades are published here
+* MUTATION
+  * Successful order book changes here
+* BID ASK
+
+### Queues
+* ACCUMULATOR (persistent)
+  * CRUD order requests are added to this queue
+* STATE LOGS (persistent )
+  * CRUD orders are added to this by accumulator
 
 ### Order punching interface
 * A http server to accept request for order crud and trade streams.
 * I have used FastAPI framework for http server.
+* Functionality
+  * CRUD order
+  * BID ASK stream
+  * Trade execution update stream
 
 ### Order matching engine
+* Has two Four processes between which common memory is shared
 
-### Order matching algorithm
-* Buy order with highest bid  and sell order with lowest ask is given priority in their respective queues.
-* If the orders have same bid or ask price the earliest order is given priority.
-* If there is price difference between highest bid and lowest ask. For example, for a bid price of 45 and ask price of 42, the trade takes place at the price of the earliest of two orders.
+#### Accumulator
+* Reads from accumulator queue and tries to change order book and maintains price-table-buy, price-table-sell, priority-queue-buy and priority-queue-sell accordingly
+* __Price tables__ are dictionaries of doubly linked lists
+* __Order book__ is a dictionary
+* __Priority_queues__ contains active prices
 
-### Order matching process
-* An order is punched through order punching interface by a http request.
-* Immediately, the order is assigned an order_id and stored in order book, a redis hashmap. At the same time, a score is calculated based on the bid or ask price and order entry time, and the order_id is added to order match queue.
+#### Match engine
+* Reads from price tables, order book, **buy and sell priority queues**
+* Publish trades if there is a match -> published to a **trade update queue**
 
-##### Order match queue
+#### Trade consumer
+* Consume executed trades
+  * Mutate persistent order book when a certain quantity is punched for an order
+  * Publish it to general trade update exchange to be consumed by frontend
 
-* Two sorted sets are maintained for buy and sell orders respectively which holds order_ids based on the priority described above.
-* A score is calculated based on the bid/ask price and timestamp.
-* Timestamp is unix epoch in further mentions.
-* We want lowest ask price to rank higher in sell queue and highest bid price to rank higher in the buy queue.
-* At the same time we want to give higher priority to earliest order if two orders have same bid or ask price.
-* Which means larger the timestamp lower should be the score within it's bid or ask price.
+#### Bid ask publisher
+* Read price tables and publish bid-ask spread table
 
-#### Calculating score
+__COMPLEXITY__
+* O(1) for reading latest buy or sell item from __price_table__
+* O(1) for reading order details from order book
+* Amortized O(1) for consuming from and adding to priority queue (Provided if there is upper and lower limit to prices)
+* O(1) for adding, updating and, cancelling order by accumulator
+* O(1) for calculating bid-ask spread
 
-* SCALE here is just a large positive number which reduces the impact of timestamp and price always remains the priority.
-* The is to get ascending scored based on our priority logic
-* For sell orders : (Ask_price * SCALE) + timestamp.
-  * lower the ask price lower the score
-  * lower the timestamp lower the score
-* For buy orders : -1 * ((bid_price * SCALE) - timestamp).
-  * higher the bid price high negative the score
-  * lower the time stamp more negative the score
-* Multiplied by -1 to keep both buy and sell scores in ascending order.
+### State manager
+* Has two processes
 
-#### Order matching engine internals
-* An infinite loop with sleep every iteration by the amount supplied by the env variable.
-* However, a better scheme would be processing every order until an order match is not possible and try to match again when there is new entry in either buy or sell list.
-* Inside the loop if the buy `price >= sell price`, trade is taken.
-* If the amount traded is equal to the quantity of the order, or if an order is executed partially-- `if quantity - previously punched == traded quantity (remaining quantity is equal to currently traded quantity)`, the order_id is popped from the queue, else the loop goes to next iteration.
+#### Mutation manager
+* Read from mutation exchange and save it to persistent storage
 
-#### Race conditions
+#### State logger
+* Read from state log queue and save it to persistent storage
 
-* To prevent race conditions I am popping order ids before they are inspected, so that they are not cancelled/update/punched during that period.
+
+### Frontend
+* Provides ability to punch, update and cancel orders; listen to bid ask spread, and trade and order-change updates; view order book.
+
+
+

@@ -17,7 +17,7 @@ class PQManager:
 
     def put(self, price):
         if price not in self.unique_set._getvalue():
-            self.last_added_price = price
+            self.last_added_price.value = price
             self.unique_set.add(price)
             self.pq.put(
                 PrioritizedItem(priority=self.priority_order * price, item=price)

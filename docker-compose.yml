@@ -1,79 +1,46 @@
 services:
-  redis:
-    image: redis:latest
-    command: ["redis-server", "--save", "30", "1", "--loglevel", "warning"]
-    ports:
-      - 6379:6379
-    networks:
-      - algotest
-    volumes:
-      - redis_data:/data
-    env_file:
-      - .env
-
-  rabbitmq:
-    image: rabbitmq:latest
-    ports:
-      - 5672:5672
-    env_file:
-      - .env
-    networks:
-      - algotest
-
   api-exchange:
     build:
       dockerfile: orderPunching.Dockerfile
     ports:
       - 8000:8000
-    networks:
-      - algotest
-    depends_on:
-      - redis
-      - order-matching
     env_file:
       - .env
     volumes:
       - logs_db:/app/logs_data
+    network_mode: host
 
   order-matching:
     build:
       dockerfile: orderMatching.Dockerfile
-    networks:
-      - algotest
     depends_on:
-      - redis
+      - api-exchange
     env_file:
       - .env
     volumes:
       - logs_db:/app/logs_data
+    network_mode: host
 
   state-manager:
     build:
       dockerfile: stateManager.Dockerfile
-    networks:
-      - algotest
     depends_on:
-      - redis
+      - api-exchange
     env_file:
       - .env
     volumes:
       - logs_db:/app/logs_data
+    network_mode: host
 
   frontend:
     build:
       dockerfile: frontend.Dockerfile
-    networks:
-      - algotest
     depends_on:
       - api-exchange
     ports:
       - 3000:80
 
-networks:
-  algotest:
 
 volumes:
-  redis_data:
-    driver: local
   logs_db:
     driver: local

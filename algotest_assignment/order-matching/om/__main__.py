@@ -9,7 +9,7 @@ from collections import deque
 import pika
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(
-        "localhost",
+        env_settings.rabbit_mq_hostname,
     )
 )
 channel = connection.channel()
@@ -42,8 +42,8 @@ with MyManager() as manager:
         "price_priority_queue_sell": manager.priority_queue(),
         "price_active_set_buy": manager.set(),
         "price_active_set_sell": manager.set(),
-        "last_added_buy": manager.Value(),
-        "last_added_sell": manager.Value()
+        "last_added_buy": manager.Value('float', 0),
+        "last_added_sell": manager.Value('float', 0)
     }
     trade_publish_queue = manager.Queue(maxsize=-1)
     mutation_lock = Lock()

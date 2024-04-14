@@ -74,7 +74,7 @@ def cancel_order(body, order_book, mutation_lock):
 def accumulator(shared_memory, manager, mutation_lock):
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(
-            "localhost",
+            env_settings.rabbit_mq_hostname,
         )
     )
     try:

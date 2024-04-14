@@ -27,17 +27,17 @@ onMounted(() => {
       console.log(message)
       const message_body = JSON.parse(message['data'])
       if (message_body['success']) {
-        toast.add({
-          severity: 'success',
-          life: 3000,
-          summary: JSON.stringify(message_body.body)
-        })
+        // toast.add({
+        //   severity: 'success',
+        //   life: 3000,
+        //   summary: JSON.stringify(message_body.body)
+        // })
       } else {
-        toast.add({
-          severity: 'error',
-          summary: message_body.message,
-          life: 3000
-        })
+        // toast.add({
+        //   severity: 'error',
+        //   summary: message_body.message,
+        //   life: 3000
+        // })
       }
     }
 })

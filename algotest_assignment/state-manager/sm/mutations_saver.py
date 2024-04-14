@@ -5,7 +5,7 @@ from crud import OrderCRUD
 
 
 def save_mutations():
-    connection = pika.BlockingConnection(pika.ConnectionParameters("localhost"))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(env_settings.rabbit_mq_hostname))
     try:
         order_crud = OrderCRUD(None)
         channel = connection.channel()

@@ -39,7 +39,7 @@ app.add_middleware(
 )
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(
-        "localhost",
+        host=env_settings.rabbit_mq_hostname,
     )
 )
 sync_channel = connection.channel()

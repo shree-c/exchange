@@ -13,6 +13,7 @@ class Settings(BaseSettings):
   state_change_queue_key:str = "order_book_state_changes"
   mutations_exchange_name:str = "mutations"
   mutation_persistent_queue_key:str = "mutations_persistent"
+  rabbit_mq_hostname: str = "localhost"
 
 
 
