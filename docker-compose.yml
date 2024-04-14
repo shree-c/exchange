@@ -7,7 +7,7 @@ services:
     env_file:
       - .env
     volumes:
-      - logs_dbx:/app/logs_data
+      - logs_dby:/app/logs_data
     network_mode: host
 
   order-matching:
@@ -18,7 +18,7 @@ services:
     env_file:
       - .env
     volumes:
-      - logs_dbx:/app/logs_data
+      - logs_dby:/app/logs_data
     network_mode: host
 
   state-manager:
@@ -29,7 +29,7 @@ services:
     env_file:
       - .env
     volumes:
-      - logs_dbx:/app/logs_data
+      - logs_dby:/app/logs_data
     network_mode: host
 
   frontend:
@@ -42,5 +42,5 @@ services:
 
 
 volumes:
-  logs_dbx:
+  logs_dby:
     driver: local

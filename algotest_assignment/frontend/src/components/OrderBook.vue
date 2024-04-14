@@ -60,9 +60,9 @@
         </template>
       </Column>
       <Column field="quantity" header="Quantity" sortable>
-        <template #editor="{ data }">
+        <!-- <template #editor="{ data }">
           <InputNumber v-model="data.quantity" />
-        </template>
+        </template> -->
       </Column>
       <Column field="punched" header="Punched"></Column>
       <Column field="order_id" header="Order id"></Column>
