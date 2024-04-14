@@ -28,25 +28,25 @@ onMounted(() => {
       const message_body = JSON.parse(message['data'])
       
       if (message_body['success']) {
-        // toast.add({
-        //   severity: 'success',
-        //   life: 3000,
-        //   summary: JSON.stringify(message_body.body)
-        // })
+        toast.add({
+          severity: 'success',
+          life: 3000,
+          summary: JSON.stringify(message_body.body)
+        })
       } else {
-        // if (message_body?.action == 'trade') {
-        //   toast.add({
-        //     severity: 'contrast',
-        //     life: 3000,
-        //     summary: `Trade: quantity : ${message_body['quantity']}, between ${message_body['buy_order_id']} and ${message_body['sell_order_id']}`
-        //   })
-        // } else {
-        //   toast.add({
-        //     severity: 'error',
-        //     summary: message_body.message,
-        //     life: 3000
-        //   })
-        // }
+        if (message_body?.action == 'trade') {
+          toast.add({
+            severity: 'contrast',
+            life: 3000,
+            summary: `Trade: quantity : ${message_body['quantity']}, between ${message_body['buy_order_id']} and ${message_body['sell_order_id']}`
+          })
+        } else {
+          toast.add({
+            severity: 'error',
+            summary: message_body.message,
+            life: 3000
+          })
+        }
       }
     }
 })
