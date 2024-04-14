@@ -58,7 +58,7 @@ docker compose up
 * Has two Four processes between which common memory is shared
 
 #### Accumulator
-* Reads from accumulator queue and tries to change order book and maintains price-table-buy, price-table-sell, priority-queue-buy and priority-queue-sell accordingly
+* Reads from accumulator queue and tries to change order book; maintains price-table-buy, price-table-sell, priority-queue-buy and priority-queue-sell accordingly
 * __Price tables__ are dictionaries of doubly linked lists
 * __Order book__ is a dictionary
 * __Priority_queues__ contains active prices

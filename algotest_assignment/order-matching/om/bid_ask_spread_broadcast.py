@@ -4,21 +4,19 @@ from om.env import env_settings
 import pika
 
 
-def calculate_depth(table, depth, reverse = False):
+def calculate_depth(table, depth, reverse=False):
     hold = {}
     for price in sorted(table._getvalue().keys(), reverse=reverse):
         if len(hold) == depth:
             break
         quantities = []
         for item in table[price]._getvalue():
-            if item['price'] == price and not item['cancelled']:
-                if item['punched'] > item ['quantity']:
-                    raise Exception('')
+            if item["price"] == price and not item["cancelled"]:
+                if item["punched"] > item["quantity"]:
+                    raise Exception("")
                 else:
-                    quantities.append(
-                        item['quantity'] - item['punched']
-                    )
-            
+                    quantities.append(item["quantity"] - item["punched"])
+
         summed = sum(quantities)
         if summed != 0:
             hold[price] = summed

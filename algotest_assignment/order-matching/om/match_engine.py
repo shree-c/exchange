@@ -27,14 +27,6 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
         print("TOP BUY", top_buy_price, "TOP SELL ", top_sell_price, flush=True)
         print("GOT SELL", flush=True)
         if top_buy_price >= top_sell_price:
-            sell_queue_len = len(
-                shared_memory["price_table_sell"][top_sell_price]._getvalue()
-            )
-            buy_queue_len = len(
-                shared_memory["price_table_buy"][top_buy_price]._getvalue()
-            )
-            print(buy_queue_len, sell_queue_len)
-            # while there are items in price table row
             with mutation_lock:
                 while (
                     len(shared_memory["price_table_buy"][top_buy_price]._getvalue())
@@ -93,7 +85,6 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                     if sell_pq.last_added_price.value < top_sell_price:
                         break
                     print("END...", flush=True)
-                
                 # if buy or sell row is not completely empty add prices back to priority queue
                 if (
                     len(shared_memory["price_table_sell"][top_sell_price]._getvalue())

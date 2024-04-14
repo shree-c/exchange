@@ -5,7 +5,6 @@ import pika
 from om.utils.priority_queue import PQManager
 import traceback
 
-
 def create_order(body, order_book, manager):
     body["punched"] = 0
     body["cancelled"] = False
@@ -15,12 +14,10 @@ def create_order(body, order_book, manager):
     order_book[body["order_id"]] = ord
     return [True, ord]
 
-
-def append_list(price_table, order, manager):
+def append_to_price_table_row(price_table, order, manager):
     if not order["price"] in price_table:
         price_table[order["price"]] = manager.deque()
     price_table[order["price"]].append(order)
-
 
 def update_order(body, order_book, mutation_lock):
     with mutation_lock:
@@ -28,19 +25,12 @@ def update_order(body, order_book, mutation_lock):
         if order_id in order_book:
             order = order_book[order_id]
             if order["cancelled"]:
-                return [False, "Cancelled"]
-            else:
-                if order["punched"] != 0:
-                    return [False, "Order partially executed. You cant modify it"]
-                else:
-                    if order["side"] == 1:
-                        order["price"] = body["price"]
-                    else:
-                        order["price"] = body["price"]
-                    return [True, order]
-        else:
-            return [False, "Couldn't find order"]
-
+                return [False, "Order is cancelled. You cant update it."]
+            if order["punched"] != 0:
+                return [False, "Order partially executed. You cant modify it"]
+            order["price"] = body["price"]
+            return [True, order]
+        return [False, "Couldn't find order"]
 
 def cancel_order(body, order_book, mutation_lock):
     with mutation_lock:
@@ -49,14 +39,11 @@ def cancel_order(body, order_book, mutation_lock):
             order = order_book[order_id]
             if order["cancelled"]:
                 return [False, "Cancelled"]
-            else:
-                if order["punched"] != 0:
-                    return [False, "Order partially executed. You cant modify it"]
-                else:
-                    order["cancelled"] = True
-                return [True, order]
-        else:
-            return [False, "Couldn't find order"]
+            if order["punched"] != 0:
+                return [False, "Order partially executed. You cant modify it."]
+            order["cancelled"] = True
+            return [True, order]
+        return [False, "Couldn't find order"]
 
 
 def accumulator(shared_memory, manager, mutation_lock):
@@ -121,14 +108,14 @@ def accumulator(shared_memory, manager, mutation_lock):
                     )
                     if status:
                         if body_parsed["side"] == 1:
-                            append_list(
+                            append_to_price_table_row(
                                 shared_memory["price_table_buy"],
                                 shared_memory["order_book"][body_parsed["order_id"]],
                                 manager,
                             )
                             buy_pq.put(body_parsed["price"])
                         else:
-                            append_list(
+                            append_to_price_table_row(
                                 shared_memory["price_table_sell"],
                                 shared_memory["order_book"][body_parsed["order_id"]],
                                 manager,
@@ -161,14 +148,14 @@ def accumulator(shared_memory, manager, mutation_lock):
                     )
                     if status:
                         if data["side"] == 1:
-                            append_list(
+                            append_to_price_table_row(
                                 shared_memory["price_table_buy"],
                                 shared_memory["order_book"][data["order_id"]],
                                 manager,
                             )
                             buy_pq.put(data["price"])
                         else:
-                            append_list(
+                            append_to_price_table_row(
                                 shared_memory["price_table_sell"],
                                 shared_memory["order_book"][data["order_id"]],
                                 manager,
@@ -205,13 +192,10 @@ def accumulator(shared_memory, manager, mutation_lock):
             else:
                 print("No action attr")
             ch.basic_ack(delivery_tag=method.delivery_tag)
-
-        print("START")
         channel.basic_consume(
             env_settings.accumulator_queue_key, on_message_callback=cb
         )
         channel.start_consuming()
-        print("Ended consuming")
     except Exception as e:
         print(traceback.format_exc())
         print(e)
