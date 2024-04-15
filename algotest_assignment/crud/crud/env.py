@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
-from pydantic import PositiveFloat
+# from pydantic import PositiveFloat
+from pathlib import Path
 
 class Settings(BaseSettings):
   redis_host: str = "localhost"
@@ -11,7 +12,7 @@ class Settings(BaseSettings):
   crud_order_id_list_prefix: str = "order_list_"
   trade_channel_name:str = "trades"
   om_new_state_notify_key:str = "om_new_state"
-  state_change_log_db:str = "/home/shree/state_change_log.db"
+  state_change_log_db:str = f"{Path.home()}/state_change_log.db"
   last_message_id:str = "last_message_id"
   accumulator_queue_key:str = "accumulator"
 

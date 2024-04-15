@@ -1,8 +1,14 @@
 from datetime import datetime
 from om.utils.priority_queue import PQManager
+from time import perf_counter_ns
 
 
 def match_engine(shared_memory, mutation_lock, trade_publish_queue):
+    # crude performance measurement
+    ORDER_PUNCHED_START = perf_counter_ns()
+    LAST_ORDER_PUNCHED = perf_counter_ns()
+    MAX_ORDER_PUNCHED_IN_ONE_SEC = 0
+    ORDER_COUNT = 0
     # manage unique priority queue (combination of python set and priority queue)
     buy_pq = PQManager(
         shared_memory["price_active_set_buy"],
@@ -26,6 +32,8 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
         top_sell_price = sell_pq.get()
         print("TOP BUY", top_buy_price, "TOP SELL ", top_sell_price, flush=True)
         print("GOT SELL", flush=True)
+
+        print("*************** MAX ORDERS IN ONE SECOND TILL NOW ", MAX_ORDER_PUNCHED_IN_ONE_SEC, '**********************')
         if top_buy_price >= top_sell_price:
             with mutation_lock:
                 while (
@@ -59,6 +67,7 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                     buy_item["punched"] += execution_quantity
                     sell_item["punched"] += execution_quantity
                     # publish
+
                     trade_publish_queue.put(
                         {
                             "buy_order_id": buy_item["order_id"],
@@ -72,12 +81,28 @@ def match_engine(shared_memory, mutation_lock, trade_publish_queue):
                             "quantity": execution_quantity,
                         }
                     )
+                    ORDER_COUNT += 1
+                    LAST_ORDER_PUNCHED = perf_counter_ns()
+                    if (LAST_ORDER_PUNCHED - ORDER_PUNCHED_START) >= 1e9:
+                        MAX_ORDER_PUNCHED_IN_ONE_SEC = max(
+                            ORDER_COUNT, MAX_ORDER_PUNCHED_IN_ONE_SEC
+                        )
+                        print(
+                            ORDER_COUNT,
+                            "orders punched in last second. Max orders in one second till now.",
+                            MAX_ORDER_PUNCHED_IN_ONE_SEC,
+                        )
+                        ORDER_COUNT = 0
+                        ORDER_PUNCHED_START = perf_counter_ns()
+
+                    LAST_ORDER_PUNCHED = perf_counter_ns()
                     if buy_item["punched"] == buy_item["quantity"]:
                         print("Completely filled,  BUY", buy_item["order_id"])
                         shared_memory["price_table_buy"][top_buy_price].popleft()
                     if sell_item["punched"] == sell_item["quantity"]:
                         print("Completely filled, SELL ", sell_item["order_id"])
                         shared_memory["price_table_sell"][top_sell_price].popleft()
+                    # this my be the reason I think the end bid ask is different for different [Match engine is not idempotent]
                     # check if chosen top_buy_price is current top buy price
                     if buy_pq.last_added_price.value > top_buy_price:
                         break

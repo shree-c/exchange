@@ -47,7 +47,11 @@ with MyManager() as manager:
     }
     trade_publish_queue = manager.Queue(maxsize=-1)
     mutation_lock = Lock()
-    accumulator_p = Process(
+    accumulator_p1 = Process(
+        target=accumulator,
+        args=(shared_memory, manager, mutation_lock),
+    )
+    accumulator_p2 = Process(
         target=accumulator,
         args=(shared_memory, manager, mutation_lock),
     )
@@ -63,16 +67,17 @@ with MyManager() as manager:
             DEPTH,
         ),
     )
-
     trade_broadcaster = Process(
         target=broadcast_trades,
         args=(trade_publish_queue,),
     )
-    accumulator_p.start()
+    accumulator_p1.start()
+    accumulator_p2.start()
     matching_engine.start()
     bid_ask_broadcaster.start()
     trade_broadcaster.start()
-    accumulator_p.join()
+    accumulator_p1.join()
+    accumulator_p2.join()
     matching_engine.join()
     bid_ask_broadcaster.join()
     trade_broadcaster.join()
